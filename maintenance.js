@@ -81,6 +81,9 @@ class SistemaMantenimiento {
                 prioridad: 'Alta'
             });
             this.agregarRegistroMantenimiento('Revisión General', 2000);
+            if (typeof notificaciones !== 'undefined') {
+                notificaciones.alertaMantenimiento('REVISIÓN GENERAL - 2000 ciclos alcanzados');
+            }
         } else if (total >= 1000 && total % 1000 === 0) {
             this.alertas.push({
                 nivel: 'warning',
@@ -90,6 +93,9 @@ class SistemaMantenimiento {
                 prioridad: 'Media'
             });
             this.agregarRegistroMantenimiento('Lubricación', 1000);
+            if (typeof notificaciones !== 'undefined') {
+                notificaciones.alertaMantenimiento('LUBRICACIÓN - 1000 ciclos alcanzados');
+            }
         } else if (total >= 500 && total % 500 === 0) {
             this.alertas.push({
                 nivel: 'info',
@@ -99,6 +105,9 @@ class SistemaMantenimiento {
                 prioridad: 'Normal'
             });
             this.agregarRegistroMantenimiento('Revisión Preventiva', 500);
+            if (typeof notificaciones !== 'undefined') {
+                notificaciones.alertaMantenimiento('REVISIÓN PREVENTIVA - 500 ciclos');
+            }
         } else if (ciclosRestantes <= 50 && ciclosRestantes > 0) {
             this.alertas.push({
                 nivel: 'warning',
@@ -133,6 +142,7 @@ class SistemaMantenimiento {
         const eficienciaSpan = document.getElementById('efficiency');
         const desgasteSpan = document.getElementById('wearLevel');
         const ciclosVidaSpan = document.getElementById('lifeCycles');
+        const prediccionSpan = document.getElementById('failurePrediction');
         
         if (circulo && porcentajeSpan) {
             const circunferencia = 283;
@@ -156,6 +166,14 @@ class SistemaMantenimiento {
         
         if (ciclosVidaSpan) {
             ciclosVidaSpan.textContent = `${total} / 5000`;
+        }
+        
+        if (prediccionSpan) {
+            if (total > 4500) prediccionSpan.textContent = 'Crítico - Reemplazo próximo';
+            else if (total > 4000) prediccionSpan.textContent = 'Alto desgaste';
+            else if (total > 3000) prediccionSpan.textContent = 'Desgaste moderado';
+            else if (total > 2000) prediccionSpan.textContent = 'Normal';
+            else prediccionSpan.textContent = 'Excelente';
         }
     }
 
@@ -202,7 +220,6 @@ class SistemaMantenimiento {
             </div>
         `).join('');
         
-        // Actualizar recomendaciones
         this.actualizarRecomendaciones();
     }
 
@@ -231,7 +248,6 @@ class SistemaMantenimiento {
             <div class="recommendation-item">${rec}</div>
         `).join('');
         
-        // Actualizar calendario
         this.actualizarCalendario();
     }
 
@@ -323,5 +339,4 @@ class SistemaMantenimiento {
     }
 }
 
-// Inicializar sistema
 const mantenimiento = new SistemaMantenimiento();
