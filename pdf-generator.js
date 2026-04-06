@@ -1,4 +1,3 @@
-// Generador de PDF profesional
 class GeneradorPDF {
     constructor() {
         this.logos = {
@@ -9,17 +8,15 @@ class GeneradorPDF {
     }
 
     async cargarLogos() {
-        // Intentar cargar los logos desde URLs locales o externas
-        const logoInstituto = document.getElementById('logoInstituto');
-        const logoCarrera = document.getElementById('logoCarrera');
+        const logoInstituto = localStorage.getItem('logo_instituto');
+        const logoCarrera = localStorage.getItem('logo_carrera');
         
-        if (logoInstituto) this.logos.instituto = logoInstituto.src;
-        if (logoCarrera) this.logos.carrera = logoCarrera.src;
+        if (logoInstituto) this.logos.instituto = logoInstituto;
+        if (logoCarrera) this.logos.carrera = logoCarrera;
     }
 
     async generarReportePDF(tipo = 'completo') {
         try {
-            // Cargar librería jsPDF
             if (typeof jspdf === 'undefined') {
                 await this.cargarJsPDF();
             }
@@ -31,13 +28,9 @@ class GeneradorPDF {
                 format: 'a4'
             });
             
-            // Configurar fuentes
             doc.setFont('helvetica');
-            
-            // === ENCABEZADO CON LOGOS ===
             await this.agregarEncabezadoConLogos(doc);
             
-            // === CONTENIDO SEGÚN TIPO ===
             switch(tipo) {
                 case 'completo':
                     await this.agregarReporteCompleto(doc);
@@ -52,10 +45,8 @@ class GeneradorPDF {
                     await this.agregarReporteCompleto(doc);
             }
             
-            // === PIE DE PÁGINA ===
             this.agregarPiePagina(doc);
             
-            // Guardar PDF
             const fecha = new Date().toISOString().split('T')[0];
             doc.save(`reporte_porton_${fecha}.pdf`);
             
@@ -67,21 +58,24 @@ class GeneradorPDF {
 
     async agregarEncabezadoConLogos(doc) {
         const pageWidth = doc.internal.pageSize.getWidth();
-        const logoWidth = 30;
-        const logoHeight = 30;
+        const logoWidth = 25;
+        const logoHeight = 25;
         
         // Logo izquierdo (Instituto)
-        try {
-            const imgInstituto = await this.cargarImagenBase64(this.logos.instituto || 'https://www.itibb.edu.bo/_astro/inf.BYqDzbDZ_2nvtHD.webp');
-            if (imgInstituto) {
-                doc.addImage(imgInstituto, 'PNG', 15, 10, logoWidth, logoHeight);
+        if (this.logos.instituto) {
+            try {
+                doc.addImage(this.logos.instituto, 'PNG', 15, 10, logoWidth, logoHeight);
+            } catch(e) {
+                doc.setFontSize(9);
+                doc.setTextColor(100);
+                doc.text('Instituto Tecnológico', 15, 20);
+                doc.text('Industrial', 15, 27);
             }
-        } catch (e) {
-            // Si no carga la imagen, usar texto
-            doc.setFontSize(10);
+        } else {
+            doc.setFontSize(9);
             doc.setTextColor(100);
-            doc.text('INSTITUTO TECNOLÓGICO', 15, 25);
-            doc.text('INDUSTRIAL', 15, 32);
+            doc.text('Instituto Tecnológico', 15, 20);
+            doc.text('Industrial Brasil Bolivia', 15, 27);
         }
         
         // Título central
@@ -90,30 +84,32 @@ class GeneradorPDF {
         doc.setTextColor(0, 51, 102);
         doc.text('SMARTGATE MONITOR', pageWidth / 2, 20, { align: 'center' });
         
-        doc.setFontSize(11);
+        doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(80, 80, 80);
-        doc.text('Sistema Predictivo de Mantenimiento', pageWidth / 2, 30, { align: 'center' });
-        doc.text('Portón Automático', pageWidth / 2, 37, { align: 'center' });
+        doc.text('Sistema Predictivo de Mantenimiento', pageWidth / 2, 28, { align: 'center' });
+        doc.text('Portón Automático', pageWidth / 2, 34, { align: 'center' });
         
         // Logo derecho (Carrera)
-        try {
-            const imgCarrera = await this.cargarImagenBase64(this.logos.carrera || 'https://lh3.googleusercontent.com/sitesv/APaQ0SS5XyO6UNzyX3q0mVofvPomom7yjPyyoTYEZ4ByKJJ7YZuMbtFFf5eWbyNEORi7Sj71TbdhNLQF0Kkxdm1lG-gl-NXh4MqD-LpBO7yxkcArE_XrRJ0y7ZlwPenyh1ldSxP0WNaE7ZOBQR3rpWf8vN2AtPkpz9thRvQ=w1280');
-            if (imgCarrera) {
-                doc.addImage(imgCarrera, 'PNG', pageWidth - 45, 10, logoWidth, logoHeight);
+        if (this.logos.carrera) {
+            try {
+                doc.addImage(this.logos.carrera, 'PNG', pageWidth - 40, 10, logoWidth, logoHeight);
+            } catch(e) {
+                doc.setFontSize(8);
+                doc.setTextColor(100);
+                doc.text('Ingeniería', pageWidth - 35, 20);
+                doc.text('Informática', pageWidth - 35, 27);
             }
-        } catch (e) {
-            doc.setFontSize(10);
+        } else {
+            doc.setFontSize(8);
             doc.setTextColor(100);
-            doc.text('Ingeniería', pageWidth - 40, 25);
-            doc.text('Informática', pageWidth - 40, 32);
+            doc.text('Ingeniería', pageWidth - 35, 20);
+            doc.text('Informática', pageWidth - 35, 27);
         }
         
-        // Línea separadora
         doc.setDrawColor(200, 200, 200);
-        doc.line(15, 45, pageWidth - 15, 45);
+        doc.line(15, 42, pageWidth - 15, 42);
         
-        // Fecha del reporte
         doc.setFontSize(9);
         doc.setTextColor(120, 120, 120);
         const fechaActual = new Date().toLocaleDateString('es-ES', {
@@ -122,16 +118,15 @@ class GeneradorPDF {
             month: 'long',
             day: 'numeric'
         });
-        doc.text(`Fecha de emisión: ${fechaActual}`, pageWidth - 50, 52);
+        doc.text(`Fecha: ${fechaActual}`, pageWidth - 45, 50);
         
-        return 55; // Y position después del encabezado
+        return 55;
     }
 
     async agregarReporteCompleto(doc) {
         let yPos = 65;
         const pageWidth = doc.internal.pageSize.getWidth();
         
-        // Resumen General
         doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
@@ -142,7 +137,6 @@ class GeneradorPDF {
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
         
-        // Datos principales
         const datos = [
             ['Ciclos totales:', mantenimiento.ciclos.total.toString()],
             ['Ciclos hoy:', mantenimiento.obtenerCiclosHoy().toString()],
@@ -159,16 +153,14 @@ class GeneradorPDF {
             yPos += 7;
         });
         
-        yPos += 5;
+        yPos += 10;
         
-        // Tabla de mantenimiento
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
         doc.text('MANTENIMIENTO PREVENTIVO', 15, yPos);
         yPos += 8;
         
-        // Crear tabla
         const tablaMantenimiento = [
             ['Tipo', 'Ciclos', 'Estado', 'Próximo'],
             ['Revisión Preventiva', '500', this.obtenerEstadoMantenimiento(500), `${this.obtenerCiclosRestantes(500)} ciclos`],
@@ -177,16 +169,15 @@ class GeneradorPDF {
         ];
         
         this.dibujarTabla(doc, tablaMantenimiento, 15, yPos, pageWidth - 30);
-        yPos += 50;
+        yPos += 45;
         
-        // Verificar si necesitamos nueva página
         if (yPos > 250) {
             doc.addPage();
             yPos = 20;
-            this.agregarEncabezadoConLogos(doc);
+            await this.agregarEncabezadoConLogos(doc);
+            yPos = 55;
         }
         
-        // Estadísticas de ciclos
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
@@ -199,13 +190,18 @@ class GeneradorPDF {
         yPos += 5;
         
         ciclosPorDia.forEach(([fecha, cantidad]) => {
+            if (yPos > 270) {
+                doc.addPage();
+                yPos = 20;
+                this.agregarEncabezadoConLogos(doc);
+                yPos = 50;
+            }
             doc.text(`${fecha.substring(5)}: ${cantidad} ciclos`, 20, yPos);
             yPos += 5;
         });
         
         yPos += 5;
         
-        // Horas más activas
         const horasActivas = mantenimiento.obtenerCiclosPorHora();
         const horasTop = horasActivas
             .map((cantidad, hora) => ({ hora, cantidad }))
@@ -215,6 +211,12 @@ class GeneradorPDF {
         doc.text('Horas de mayor actividad:', 15, yPos);
         yPos += 5;
         horasTop.forEach(({ hora, cantidad }) => {
+            if (yPos > 270) {
+                doc.addPage();
+                yPos = 20;
+                this.agregarEncabezadoConLogos(doc);
+                yPos = 50;
+            }
             doc.text(`${hora}:00 - ${hora + 1}:00: ${cantidad} ciclos`, 20, yPos);
             yPos += 5;
         });
@@ -223,7 +225,6 @@ class GeneradorPDF {
     async agregarReporteMantenimiento(doc) {
         let yPos = 65;
         
-        // Historial de mantenimientos
         doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
@@ -249,11 +250,11 @@ class GeneradorPDF {
             yPos += 10 + (tablaMantenimientos.length * 7);
         }
         
-        // Recomendaciones
         if (yPos > 250) {
             doc.addPage();
             yPos = 20;
-            this.agregarEncabezadoConLogos(doc);
+            await this.agregarEncabezadoConLogos(doc);
+            yPos = 55;
         }
         
         doc.setFontSize(12);
@@ -270,6 +271,12 @@ class GeneradorPDF {
         ];
         
         recomendaciones.forEach(rec => {
+            if (yPos > 270) {
+                doc.addPage();
+                yPos = 20;
+                this.agregarEncabezadoConLogos(doc);
+                yPos = 50;
+            }
             doc.setFontSize(9);
             doc.text(rec, 20, yPos);
             yPos += 6;
@@ -279,7 +286,6 @@ class GeneradorPDF {
     async agregarReporteEstadisticas(doc) {
         let yPos = 65;
         
-        // Gráfico de tendencia (textual)
         doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
@@ -287,7 +293,7 @@ class GeneradorPDF {
         yPos += 8;
         
         const totalCiclos = mantenimiento.ciclos.total;
-        const proyeccion = Math.round(totalCiclos * 1.1); // Proyección 10% más
+        const proyeccion = Math.round(totalCiclos * 1.1);
         
         doc.setFontSize(10);
         doc.text(`Ciclos actuales: ${totalCiclos}`, 20, yPos);
@@ -304,18 +310,20 @@ class GeneradorPDF {
         doc.text(`Ciclos restantes estimados: ${vidaRestante}`, 20, yPos);
         yPos += 15;
         
-        // Alerta de mantenimiento predictivo
         doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
-        doc.setTextColor(220, 38, 38);
         
         if (totalCiclos > 4000) {
+            doc.setTextColor(220, 38, 38);
             doc.text('⚠️ ALERTA: Se recomienda reemplazo preventivo del motor', 20, yPos);
         } else if (totalCiclos > 3000) {
+            doc.setTextColor(245, 158, 11);
             doc.text('⚠️ Atención: Desgaste significativo detectado', 20, yPos);
         } else if (totalCiclos > 2000) {
+            doc.setTextColor(59, 130, 246);
             doc.text('ℹ️ Mantenimiento regular requerido', 20, yPos);
         } else {
+            doc.setTextColor(16, 185, 129);
             doc.text('✅ Sistema en excelente estado', 20, yPos);
         }
     }
@@ -341,7 +349,6 @@ class GeneradorPDF {
         const colWidth = width / datos[0].length;
         let yPos = y;
         
-        // Cabecera
         doc.setFillColor(0, 51, 102);
         doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'bold');
@@ -353,12 +360,10 @@ class GeneradorPDF {
         
         yPos += 8;
         
-        // Filas
         doc.setTextColor(0, 0, 0);
         doc.setFont('helvetica', 'normal');
         
         for (let i = 1; i < datos.length; i++) {
-            // Color alternado para filas
             if (i % 2 === 0) {
                 doc.setFillColor(240, 240, 240);
                 doc.rect(x, yPos, width, 7, 'F');
@@ -390,7 +395,6 @@ class GeneradorPDF {
             const script = document.createElement('script');
             script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
             script.onload = () => {
-                // También cargar html2canvas para imágenes
                 const canvasScript = document.createElement('script');
                 canvasScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
                 canvasScript.onload = resolve;
@@ -402,34 +406,6 @@ class GeneradorPDF {
         });
     }
 
-    async cargarSheetJS() {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-        });
-    }
-
-    async cargarImagenBase64(url) {
-        return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.crossOrigin = 'Anonymous';
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-                resolve(canvas.toDataURL('image/png'));
-            };
-            img.onerror = reject;
-            img.src = url;
-        });
-    }
-
-    // Exportar a Excel con formato profesional
     async exportarExcelCompleto() {
         try {
             if (typeof XLSX === 'undefined') {
@@ -438,7 +414,6 @@ class GeneradorPDF {
             
             const wb = XLSX.utils.book_new();
             
-            // Hoja 1: Resumen
             const resumenData = [
                 ['SMARTGATE MONITOR - REPORTE COMPLETO'],
                 ['Instituto Tecnológico Industrial Brasil Bolivia - Ingeniería Informática'],
@@ -461,7 +436,6 @@ class GeneradorPDF {
             wsResumen['!cols'] = [{wch:25}, {wch:15}];
             XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
             
-            // Hoja 2: Ciclos por día
             const ciclosData = [['Fecha', 'Ciclos']];
             const ciclosPorDia = mantenimiento.obtenerCiclosPorDia(30);
             ciclosPorDia.forEach(([fecha, cantidad]) => {
@@ -472,14 +446,13 @@ class GeneradorPDF {
             wsCiclos['!cols'] = [{wch:15}, {wch:10}];
             XLSX.utils.book_append_sheet(wb, wsCiclos, 'Ciclos por Día');
             
-            // Hoja 3: Eventos recientes
             const eventosData = [['Fecha', 'Tipo', 'Evento', 'Detalles']];
-            this.eventos.slice(0, 500).forEach(evento => {
+            registro.eventos.slice(0, 500).forEach(evento => {
                 eventosData.push([
                     new Date(evento.timestamp).toLocaleString(),
                     evento.tipo,
                     evento.datos.estado || evento.datos.abierto || '-',
-                    this.formatearDetalles(evento.datos)
+                    registro.formatearDetalles(evento.datos)
                 ]);
             });
             
@@ -487,7 +460,6 @@ class GeneradorPDF {
             wsEventos['!cols'] = [{wch:20}, {wch:12}, {wch:15}, {wch:30}];
             XLSX.utils.book_append_sheet(wb, wsEventos, 'Eventos');
             
-            // Guardar archivo
             const fecha = new Date().toISOString().split('T')[0];
             XLSX.writeFile(wb, `reporte_porton_${fecha}.xlsx`);
             
@@ -496,12 +468,20 @@ class GeneradorPDF {
             alert('Error al exportar a Excel');
         }
     }
+
+    async cargarSheetJS() {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
 }
 
-// Inicializar generador
 const generadorPDF = new GeneradorPDF();
 
-// Funciones globales para PDF
 function generarPDFCompleto() {
     generadorPDF.generarReportePDF('completo');
 }
