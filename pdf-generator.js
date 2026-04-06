@@ -1,3 +1,4 @@
+// Generador de PDF y Excel - VERSIÓN CORREGIDA
 class GeneradorPDF {
     constructor() {
         this.logos = {
@@ -5,6 +6,14 @@ class GeneradorPDF {
             carrera: null
         };
         this.cargarLogos();
+        this.cargarLibrerias();
+    }
+
+    async cargarLibrerias() {
+        // Cargar SheetJS si no existe
+        if (typeof XLSX === 'undefined') {
+            await this.cargarSheetJS();
+        }
     }
 
     async cargarLogos() {
@@ -17,6 +26,7 @@ class GeneradorPDF {
 
     async generarReportePDF(tipo = 'completo') {
         try {
+            // Cargar jsPDF si no está disponible
             if (typeof jspdf === 'undefined') {
                 await this.cargarJsPDF();
             }
@@ -137,12 +147,18 @@ class GeneradorPDF {
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
         
+        const totalCiclos = typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0;
+        const ciclosHoy = typeof mantenimiento !== 'undefined' ? mantenimiento.obtenerCiclosHoy() : 0;
+        const estadoActual = document.getElementById('currentState')?.textContent || '---';
+        const saludSistema = document.getElementById('healthPercent')?.textContent + '%' || '100%';
+        const proximoMantenimiento = document.getElementById('nextMaintenance')?.textContent || '---';
+        
         const datos = [
-            ['Ciclos totales:', mantenimiento.ciclos.total.toString()],
-            ['Ciclos hoy:', mantenimiento.obtenerCiclosHoy().toString()],
-            ['Estado actual:', document.getElementById('currentState')?.textContent || '---'],
-            ['Salud del sistema:', document.getElementById('healthPercent')?.textContent + '%' || '100%'],
-            ['Próximo mantenimiento:', document.getElementById('nextMaintenance')?.textContent || '---']
+            ['Ciclos totales:', totalCiclos.toString()],
+            ['Ciclos hoy:', ciclosHoy.toString()],
+            ['Estado actual:', estadoActual],
+            ['Salud del sistema:', saludSistema],
+            ['Próximo mantenimiento:', proximoMantenimiento]
         ];
         
         datos.forEach(([label, value]) => {
@@ -184,25 +200,38 @@ class GeneradorPDF {
         doc.text('ESTADÍSTICAS DE USO', 15, yPos);
         yPos += 8;
         
-        const ciclosPorDia = mantenimiento.obtenerCiclosPorDia(7);
+        let ciclosPorDia = [];
+        if (typeof mantenimiento !== 'undefined') {
+            ciclosPorDia = mantenimiento.obtenerCiclosPorDia(7);
+        }
+        
         doc.setFontSize(9);
         doc.text('Ciclos por día (últimos 7 días):', 15, yPos);
         yPos += 5;
         
-        ciclosPorDia.forEach(([fecha, cantidad]) => {
-            if (yPos > 270) {
-                doc.addPage();
-                yPos = 20;
-                this.agregarEncabezadoConLogos(doc);
-                yPos = 50;
-            }
-            doc.text(`${fecha.substring(5)}: ${cantidad} ciclos`, 20, yPos);
+        if (ciclosPorDia.length === 0) {
+            doc.text('No hay datos disponibles', 20, yPos);
             yPos += 5;
-        });
+        } else {
+            ciclosPorDia.forEach(([fecha, cantidad]) => {
+                if (yPos > 270) {
+                    doc.addPage();
+                    yPos = 20;
+                    this.agregarEncabezadoConLogos(doc);
+                    yPos = 50;
+                }
+                doc.text(`${fecha.substring(5)}: ${cantidad} ciclos`, 20, yPos);
+                yPos += 5;
+            });
+        }
         
         yPos += 5;
         
-        const horasActivas = mantenimiento.obtenerCiclosPorHora();
+        let horasActivas = [];
+        if (typeof mantenimiento !== 'undefined') {
+            horasActivas = mantenimiento.obtenerCiclosPorHora();
+        }
+        
         const horasTop = horasActivas
             .map((cantidad, hora) => ({ hora, cantidad }))
             .sort((a, b) => b.cantidad - a.cantidad)
@@ -210,16 +239,21 @@ class GeneradorPDF {
         
         doc.text('Horas de mayor actividad:', 15, yPos);
         yPos += 5;
-        horasTop.forEach(({ hora, cantidad }) => {
-            if (yPos > 270) {
-                doc.addPage();
-                yPos = 20;
-                this.agregarEncabezadoConLogos(doc);
-                yPos = 50;
-            }
-            doc.text(`${hora}:00 - ${hora + 1}:00: ${cantidad} ciclos`, 20, yPos);
-            yPos += 5;
-        });
+        
+        if (horasTop.length === 0 || horasTop[0].cantidad === 0) {
+            doc.text('No hay datos de actividad disponibles', 20, yPos);
+        } else {
+            horasTop.forEach(({ hora, cantidad }) => {
+                if (yPos > 270) {
+                    doc.addPage();
+                    yPos = 20;
+                    this.agregarEncabezadoConLogos(doc);
+                    yPos = 50;
+                }
+                doc.text(`${hora}:00 - ${hora + 1}:00: ${cantidad} ciclos`, 20, yPos);
+                yPos += 5;
+            });
+        }
     }
 
     async agregarReporteMantenimiento(doc) {
@@ -231,14 +265,19 @@ class GeneradorPDF {
         doc.text('HISTORIAL DE MANTENIMIENTO', 15, yPos);
         yPos += 8;
         
-        if (mantenimiento.historialMantenimiento.length === 0) {
+        let historialMantenimiento = [];
+        if (typeof mantenimiento !== 'undefined') {
+            historialMantenimiento = mantenimiento.historialMantenimiento || [];
+        }
+        
+        if (historialMantenimiento.length === 0) {
             doc.text('No hay registros de mantenimiento previos', 20, yPos);
         } else {
             const tablaMantenimientos = [
                 ['Fecha', 'Tipo', 'Ciclos al momento']
             ];
             
-            mantenimiento.historialMantenimiento.slice(-10).forEach(m => {
+            historialMantenimiento.slice(-10).forEach(m => {
                 tablaMantenimientos.push([
                     new Date(m.fecha).toLocaleDateString(),
                     m.tipo,
@@ -292,7 +331,7 @@ class GeneradorPDF {
         doc.text('ANÁLISIS DE TENDENCIAS', 15, yPos);
         yPos += 8;
         
-        const totalCiclos = mantenimiento.ciclos.total;
+        const totalCiclos = typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0;
         const proyeccion = Math.round(totalCiclos * 1.1);
         
         doc.setFontSize(10);
@@ -377,6 +416,7 @@ class GeneradorPDF {
     }
 
     obtenerEstadoMantenimiento(limite) {
+        if (typeof mantenimiento === 'undefined') return 'Sin datos';
         const total = mantenimiento.ciclos.total;
         const completados = Math.floor(total / limite);
         if (completados === 0) return 'Pendiente';
@@ -385,9 +425,23 @@ class GeneradorPDF {
     }
 
     obtenerCiclosRestantes(limite) {
+        if (typeof mantenimiento === 'undefined') return 0;
         const total = mantenimiento.ciclos.total;
         const siguiente = Math.ceil(total / limite) * limite;
         return siguiente - total;
+    }
+
+    formatearDetallesExcel(datos) {
+        const detalles = [];
+        if (datos.modoAuto !== undefined) detalles.push(`Auto:${datos.modoAuto}`);
+        if (datos.emergenciaActiva) detalles.push('Emergencia');
+        if (datos.permisoEspecial) detalles.push('Permiso Especial');
+        if (datos.horarioActivo) detalles.push('Modo Horario');
+        if (datos.abierto === true) detalles.push('Sensor ABIERTO');
+        if (datos.cerrado === true) detalles.push('Sensor CERRADO');
+        if (datos.fotoHabilitado === true) detalles.push('Fotocélula OK');
+        if (datos.botonFisicoHabilitado === true) detalles.push('Botón Físico OK');
+        return detalles.join(' | ') || 'Sin detalles';
     }
 
     async cargarJsPDF() {
@@ -406,13 +460,32 @@ class GeneradorPDF {
         });
     }
 
+    async cargarSheetJS() {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
     async exportarExcelCompleto() {
         try {
+            // Asegurar que SheetJS está cargado
             if (typeof XLSX === 'undefined') {
                 await this.cargarSheetJS();
+                // Pequeña pausa para asegurar carga
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
             
             const wb = XLSX.utils.book_new();
+            
+            // Hoja 1: Resumen
+            const totalCiclos = typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0;
+            const ciclosHoy = typeof mantenimiento !== 'undefined' ? mantenimiento.obtenerCiclosHoy() : 0;
+            const estadoActual = document.getElementById('currentState')?.textContent || '---';
+            const saludSistema = document.getElementById('healthPercent')?.textContent + '%' || '100%';
             
             const resumenData = [
                 ['SMARTGATE MONITOR - REPORTE COMPLETO'],
@@ -420,10 +493,10 @@ class GeneradorPDF {
                 ['Fecha:', new Date().toLocaleString()],
                 [''],
                 ['RESUMEN GENERAL'],
-                ['Ciclos Totales', mantenimiento.ciclos.total],
-                ['Ciclos Hoy', mantenimiento.obtenerCiclosHoy()],
-                ['Estado Actual', document.getElementById('currentState')?.textContent || '---'],
-                ['Salud del Sistema', document.getElementById('healthPercent')?.textContent + '%' || '100%'],
+                ['Ciclos Totales', totalCiclos],
+                ['Ciclos Hoy', ciclosHoy],
+                ['Estado Actual', estadoActual],
+                ['Salud del Sistema', saludSistema],
                 [''],
                 ['MANTENIMIENTO'],
                 ['Tipo', 'Ciclo Requerido', 'Estado', 'Ciclos Restantes'],
@@ -436,52 +509,53 @@ class GeneradorPDF {
             wsResumen['!cols'] = [{wch:25}, {wch:15}];
             XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen');
             
+            // Hoja 2: Ciclos por día
             const ciclosData = [['Fecha', 'Ciclos']];
-            const ciclosPorDia = mantenimiento.obtenerCiclosPorDia(30);
-            ciclosPorDia.forEach(([fecha, cantidad]) => {
-                ciclosData.push([fecha, cantidad]);
-            });
+            if (typeof mantenimiento !== 'undefined') {
+                const ciclosPorDia = mantenimiento.obtenerCiclosPorDia(30);
+                ciclosPorDia.forEach(([fecha, cantidad]) => {
+                    ciclosData.push([fecha, cantidad]);
+                });
+            }
             
             const wsCiclos = XLSX.utils.aoa_to_sheet(ciclosData);
             wsCiclos['!cols'] = [{wch:15}, {wch:10}];
             XLSX.utils.book_append_sheet(wb, wsCiclos, 'Ciclos por Día');
             
+            // Hoja 3: Eventos recientes
             const eventosData = [['Fecha', 'Tipo', 'Evento', 'Detalles']];
-            registro.eventos.slice(0, 500).forEach(evento => {
-                eventosData.push([
-                    new Date(evento.timestamp).toLocaleString(),
-                    evento.tipo,
-                    evento.datos.estado || evento.datos.abierto || '-',
-                    registro.formatearDetalles(evento.datos)
-                ]);
-            });
+            if (typeof registro !== 'undefined' && registro.eventos) {
+                registro.eventos.slice(0, 500).forEach(evento => {
+                    eventosData.push([
+                        new Date(evento.timestamp).toLocaleString(),
+                        evento.tipo,
+                        evento.datos.estado || evento.datos.abierto || '-',
+                        this.formatearDetallesExcel(evento.datos)
+                    ]);
+                });
+            }
             
             const wsEventos = XLSX.utils.aoa_to_sheet(eventosData);
             wsEventos['!cols'] = [{wch:20}, {wch:12}, {wch:15}, {wch:30}];
             XLSX.utils.book_append_sheet(wb, wsEventos, 'Eventos');
             
+            // Guardar archivo
             const fecha = new Date().toISOString().split('T')[0];
             XLSX.writeFile(wb, `reporte_porton_${fecha}.xlsx`);
             
+            alert('✅ Excel exportado correctamente');
+            
         } catch (error) {
             console.error('Error exportando Excel:', error);
-            alert('Error al exportar a Excel');
+            alert('Error al exportar a Excel: ' + error.message);
         }
-    }
-
-    async cargarSheetJS() {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
-            script.onload = resolve;
-            script.onerror = reject;
-            document.head.appendChild(script);
-        });
     }
 }
 
+// Inicializar generador
 const generadorPDF = new GeneradorPDF();
 
+// Funciones globales
 function generarPDFCompleto() {
     generadorPDF.generarReportePDF('completo');
 }
