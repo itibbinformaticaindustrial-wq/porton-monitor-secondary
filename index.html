@@ -1,1 +1,248 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📊 Smart Gate Monitor - Sistema Predictivo de Mantenimiento</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mqtt@5.0.3/dist/mqtt.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <div class="logo-icon">🚪</div>
+                <div class="logo-text">
+                    <h2>SmartGate</h2>
+                    <span>Predictive Maintenance</span>
+                </div>
+            </div>
+            
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-view="dashboard">
+                    <span class="nav-icon">📊</span>
+                    <span>Dashboard</span>
+                </a>
+                <a href="#" class="nav-item" data-view="maintenance">
+                    <span class="nav-icon">🔧</span>
+                    <span>Mantenimiento</span>
+                </a>
+                <a href="#" class="nav-item" data-view="history">
+                    <span class="nav-icon">📜</span>
+                    <span>Historial</span>
+                </a>
+                <a href="#" class="nav-item" data-view="analytics">
+                    <span class="nav-icon">📈</span>
+                    <span>Analytics</span>
+                </a>
+            </nav>
+            
+            <div class="mqtt-status" id="mqttStatusSidebar">
+                <div class="status-indicator offline"></div>
+                <div class="status-text">Desconectado</div>
+            </div>
+        </aside>
 
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="top-header">
+                <div class="header-title">
+                    <h1>Sistema Predictivo de Mantenimiento</h1>
+                    <p>Monitoreo en tiempo real y análisis de ciclos</p>
+                </div>
+                <div class="header-actions">
+                    <button onclick="exportToCSV()" class="btn-icon" title="Exportar CSV">📄</button>
+                    <button onclick="exportToJSON()" class="btn-icon" title="Exportar JSON">📋</button>
+                    <button onclick="refreshData()" class="btn-icon" title="Refrescar">🔄</button>
+                </div>
+            </header>
+
+            <!-- Dashboard View -->
+            <div id="dashboardView" class="view active">
+                <!-- KPI Cards -->
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-icon">🔄</div>
+                        <div class="kpi-info">
+                            <span class="kpi-label">Ciclos Totales</span>
+                            <span class="kpi-value" id="totalCycles">0</span>
+                            <span class="kpi-trend" id="trendWeek">+0 esta semana</span>
+                        </div>
+                    </div>
+                    
+                    <div class="kpi-card">
+                        <div class="kpi-icon">📅</div>
+                        <div class="kpi-info">
+                            <span class="kpi-label">Ciclos Hoy</span>
+                            <span class="kpi-value" id="todayCycles">0</span>
+                            <span class="kpi-sub">Meta: 50/día</span>
+                        </div>
+                    </div>
+                    
+                    <div class="kpi-card">
+                        <div class="kpi-icon">⚡</div>
+                        <div class="kpi-info">
+                            <span class="kpi-label">Estado Actual</span>
+                            <span class="kpi-value" id="currentState">---</span>
+                            <span class="kpi-sub" id="lastUpdate">Último: hace --</span>
+                        </div>
+                    </div>
+                    
+                    <div class="kpi-card">
+                        <div class="kpi-icon">🔧</div>
+                        <div class="kpi-info">
+                            <span class="kpi-label">Próximo Mantenimiento</span>
+                            <span class="kpi-value" id="nextMaintenance">---</span>
+                            <span class="kpi-sub" id="cyclesToNext">--- ciclos restantes</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Maintenance Alerts -->
+                <div class="alerts-panel">
+                    <div class="panel-header">
+                        <h3>⚠️ Alertas y Recomendaciones</h3>
+                        <span class="badge" id="alertCount">0 alertas</span>
+                    </div>
+                    <div id="alertsContainer" class="alerts-container"></div>
+                </div>
+
+                <!-- Charts Row -->
+                <div class="charts-grid">
+                    <div class="chart-panel">
+                        <div class="panel-header">
+                            <h3>📊 Ciclos por Día</h3>
+                            <select id="daysRange" onchange="updateCharts()">
+                                <option value="7">Últimos 7 días</option>
+                                <option value="14">Últimos 14 días</option>
+                                <option value="30">Últimos 30 días</option>
+                            </select>
+                        </div>
+                        <canvas id="dailyChart" height="250"></canvas>
+                    </div>
+                    
+                    <div class="chart-panel">
+                        <div class="panel-header">
+                            <h3>⏰ Horario de Mayor Actividad</h3>
+                        </div>
+                        <canvas id="hourlyChart" height="250"></canvas>
+                    </div>
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="activity-panel">
+                    <div class="panel-header">
+                        <h3>🕐 Actividad Reciente</h3>
+                        <button onclick="clearEvents()" class="btn-text">Limpiar historial</button>
+                    </div>
+                    <div class="activity-timeline" id="activityTimeline">
+                        <div class="empty-state">Esperando actividad...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Maintenance View -->
+            <div id="maintenanceView" class="view">
+                <div class="maintenance-dashboard">
+                    <div class="health-score">
+                        <h2>Salud del Sistema</h2>
+                        <div class="score-circle" id="healthScore">
+                            <svg viewBox="0 0 100 100">
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="#e2e8f0" stroke-width="8"/>
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="#10b981" stroke-width="8" 
+                                        stroke-dasharray="283" stroke-dashoffset="0" id="healthCircle"/>
+                            </svg>
+                            <div class="score-text">
+                                <span id="healthPercent">100</span>%
+                            </div>
+                        </div>
+                        <div class="health-details">
+                            <div class="detail-item">
+                                <span>Eficiencia:</span>
+                                <strong id="efficiency">100%</strong>
+                            </div>
+                            <div class="detail-item">
+                                <span>Desgaste estimado:</span>
+                                <strong id="wearLevel">0%</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="maintenance-schedule">
+                        <h3>📅 Calendario de Mantenimiento</h3>
+                        <div class="schedule-timeline" id="scheduleTimeline"></div>
+                    </div>
+
+                    <div class="recommendations">
+                        <h3>💡 Recomendaciones Preventivas</h3>
+                        <div id="recommendationsList" class="recommendations-list"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History View -->
+            <div id="historyView" class="view">
+                <div class="history-filters">
+                    <input type="date" id="dateFrom" class="filter-input">
+                    <input type="date" id="dateTo" class="filter-input">
+                    <select id="eventTypeFilter" class="filter-input">
+                        <option value="all">Todos los eventos</option>
+                        <option value="ESTADO">Cambios de estado</option>
+                        <option value="SENSORES">Sensores</option>
+                        <option value="CICLO">Ciclos completos</option>
+                    </select>
+                    <button onclick="filterHistory()" class="btn-primary">Filtrar</button>
+                </div>
+                <div class="history-stats">
+                    <div class="stat-mini">
+                        <span>Total eventos</span>
+                        <strong id="totalEvents">0</strong>
+                    </div>
+                    <div class="stat-mini">
+                        <span>Este mes</span>
+                        <strong id="monthEvents">0</strong>
+                    </div>
+                    <div class="stat-mini">
+                        <span>Promedio diario</span>
+                        <strong id="avgDaily">0</strong>
+                    </div>
+                </div>
+                <div class="history-table-container">
+                    <table class="history-table" id="historyTable">
+                        <thead>
+                            <tr><th>Fecha/Hora</th><th>Tipo</th><th>Evento</th><th>Detalles</th></tr>
+                        </thead>
+                        <tbody id="historyBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Analytics View -->
+            <div id="analyticsView" class="view">
+                <div class="analytics-grid">
+                    <div class="analytics-card">
+                        <h3>📈 Proyección de Mantenimiento</h3>
+                        <canvas id="projectionChart" height="200"></canvas>
+                    </div>
+                    <div class="analytics-card">
+                        <h3>🎯 Ciclos vs Meta</h3>
+                        <canvas id="goalChart" height="200"></canvas>
+                    </div>
+                    <div class="analytics-card full-width">
+                        <h3>📊 Estadísticas Mensuales</h3>
+                        <canvas id="monthlyChart" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="maintenance.js"></script>
+    <script src="registro.js"></script>
+    <script src="mqtt-client.js"></script>
+</body>
+</html>
