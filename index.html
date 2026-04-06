@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <meta name="theme-color" content="#1e3c72">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>📊 SmartGate Monitor - Sistema Predictivo de Mantenimiento</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
@@ -74,8 +74,10 @@
                 </div>
                 <div class="header-actions">
                     <button onclick="toggleDarkMode()" class="btn-icon" title="Modo oscuro">🌙</button>
+                    <button onclick="generarPDFCompleto()" class="btn-icon" title="Reporte PDF Completo">📑</button>
+                    <button onclick="generarPDFMantenimiento()" class="btn-icon" title="Reporte Mantenimiento">🔧</button>
+                    <button onclick="exportarExcelCompleto()" class="btn-icon" title="Exportar Excel">📊</button>
                     <button onclick="exportToCSV()" class="btn-icon" title="Exportar CSV">📄</button>
-                    <button onclick="exportToJSON()" class="btn-icon" title="Exportar JSON">📋</button>
                     <button onclick="refreshData()" class="btn-icon" title="Actualizar">🔄</button>
                 </div>
             </header>
@@ -215,7 +217,9 @@
                 </div>
                 <div class="history-table-container">
                     <table class="history-table">
-                        <thead><tr><th>Fecha/Hora</th><th>Tipo</th><th>Evento</th><th>Detalles</th></tr></thead>
+                        <thead>
+                            <tr><th>Fecha/Hora</th><th>Tipo</th><th>Evento</th><th>Detalles</th></tr>
+                        </thead>
                         <tbody id="historyBody"></tbody>
                     </table>
                 </div>
@@ -348,6 +352,21 @@
                     </div>
 
                     <div class="settings-group">
+                        <h3>🏫 Configuración de Reportes</h3>
+                        <div class="setting-item">
+                            <label>Logo del Instituto</label>
+                            <input type="file" id="logoInstitutoUpload" accept="image/*" class="filter-input">
+                            <img id="logoInstituto" style="display:none; max-width:100px; margin-top:10px;">
+                        </div>
+                        <div class="setting-item">
+                            <label>Logo de la Carrera</label>
+                            <input type="file" id="logoCarreraUpload" accept="image/*" class="filter-input">
+                            <img id="logoCarrera" style="display:none; max-width:100px; margin-top:10px;">
+                        </div>
+                        <button onclick="guardarLogos()" class="btn-primary">Guardar Logos</button>
+                    </div>
+
+                    <div class="settings-group">
                         <h3>Preferencias de Datos</h3>
                         <div class="setting-item">
                             <label>📊 Mostrar meta diaria</label>
@@ -381,8 +400,10 @@
 
                     <div class="settings-group">
                         <h3>Acerca de</h3>
-                        <p>Versión: 2.0.0</p>
-                        <p>Última actualización: Enero 2026</p>
+                        <p><strong>Instituto Tecnológico Industrial Brasil Bolivia</strong></p>
+                        <p><strong>Carrera:</strong> Ingeniería Informática</p>
+                        <p><strong>Versión:</strong> 2.0.0</p>
+                        <p><strong>Última actualización:</strong> Enero 2026</p>
                         <button onclick="clearAllData()" class="btn-danger">⚠️ Eliminar Todos los Datos</button>
                     </div>
                 </div>
@@ -394,10 +415,67 @@
         <source src="https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3" type="audio/mpeg">
     </audio>
 
+    <!-- Scripts -->
     <script src="maintenance.js"></script>
     <script src="registro.js"></script>
     <script src="notifications.js"></script>
     <script src="backup.js"></script>
+    <script src="pdf-generator.js"></script>
     <script src="mqtt-client.js"></script>
+    
+    <script>
+        // Función para guardar logos
+        function guardarLogos() {
+            const logoInstitutoInput = document.getElementById('logoInstitutoUpload');
+            const logoCarreraInput = document.getElementById('logoCarreraUpload');
+            
+            if (logoInstitutoInput.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    localStorage.setItem('logo_instituto', e.target.result);
+                    const img = document.getElementById('logoInstituto');
+                    img.src = e.target.result;
+                    img.style.display = 'block';
+                };
+                reader.readAsDataURL(logoInstitutoInput.files[0]);
+            }
+            
+            if (logoCarreraInput.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    localStorage.setItem('logo_carrera', e.target.result);
+                    const img = document.getElementById('logoCarrera');
+                    img.src = e.target.result;
+                    img.style.display = 'block';
+                };
+                reader.readAsDataURL(logoCarreraInput.files[0]);
+            }
+            
+            alert('✅ Logos guardados correctamente');
+        }
+
+        // Cargar logos guardados
+        function cargarLogosGuardados() {
+            const logoInstituto = localStorage.getItem('logo_instituto');
+            const logoCarrera = localStorage.getItem('logo_carrera');
+            
+            if (logoInstituto) {
+                const img = document.getElementById('logoInstituto');
+                img.src = logoInstituto;
+                img.style.display = 'block';
+            }
+            
+            if (logoCarrera) {
+                const img = document.getElementById('logoCarrera');
+                img.src = logoCarrera;
+                img.style.display = 'block';
+            }
+        }
+
+        // Inicializar al cargar la página
+        document.addEventListener('DOMContentLoaded', () => {
+            cargarLogosGuardados();
+        });
+    </script>
 </body>
 </html>
