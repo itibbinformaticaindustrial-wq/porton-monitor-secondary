@@ -1,8 +1,16 @@
-// Generador de PDF y Excel - VERSIÓN CORREGIDA CON VERIFICACIÓN
+// Generador de PDF - VERSIÓN CON MÁRGENES PROFESIONALES
 class GeneradorPDF {
     constructor() {
         console.log('📄 Inicializando GeneradorPDF...');
         this.libreriasCargadas = false;
+        
+        // Configuración de márgenes (en mm)
+        this.margen = {
+            superior: 55,
+            izquierdo: 20,
+            derecho: 20,
+            inferior: 20
+        };
         
         this.urlsLogos = {
             instituto: window.location.origin + '/porton-monitor-secondary/img/logo-instituto.png',
@@ -14,7 +22,6 @@ class GeneradorPDF {
             carrera: localStorage.getItem('logo_carrera')
         };
         
-        // Verificar si las librerías ya están cargadas
         this.verificarLibrerias();
     }
 
@@ -30,12 +37,10 @@ class GeneradorPDF {
 
     async cargarLibrerias() {
         return new Promise((resolve, reject) => {
-            // Cargar jsPDF
             const script1 = document.createElement('script');
             script1.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
             script1.onload = () => {
                 console.log('✅ jsPDF cargado');
-                // Cargar html2canvas
                 const script2 = document.createElement('script');
                 script2.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
                 script2.onload = () => {
@@ -61,17 +66,13 @@ class GeneradorPDF {
         console.log('📑 Generando PDF tipo:', tipo);
         
         try {
-            // Mostrar mensaje de carga
             this.mostrarMensajeCarga('Generando PDF, espere un momento...');
             
-            // Verificar librerías
             if (!this.libreriasCargadas) {
-                console.log('Cargando librerías...');
                 await this.cargarLibrerias();
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
             
-            // Verificar que jsPDF esté disponible
             if (typeof jspdf === 'undefined') {
                 throw new Error('jsPDF no está disponible');
             }
@@ -84,20 +85,28 @@ class GeneradorPDF {
             });
             
             doc.setFont('helvetica');
-            await this.agregarEncabezadoConLogos(doc);
             
+            // Configurar márgenes
+            const anchoUtil = doc.internal.pageSize.getWidth() - this.margen.izquierdo - this.margen.derecho;
+            let yPos = this.margen.superior;
+            
+            // Agregar encabezado
+            yPos = await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
+            yPos += 10;
+            
+            // Agregar contenido según tipo
             switch(tipo) {
                 case 'completo':
-                    await this.agregarReporteCompleto(doc);
+                    yPos = await this.agregarReporteCompleto(doc, yPos, anchoUtil);
                     break;
                 case 'mantenimiento':
-                    await this.agregarReporteMantenimiento(doc);
+                    yPos = await this.agregarReporteMantenimiento(doc, yPos, anchoUtil);
                     break;
                 case 'estadisticas':
-                    await this.agregarReporteEstadisticas(doc);
+                    yPos = await this.agregarReporteEstadisticas(doc, yPos, anchoUtil);
                     break;
                 default:
-                    await this.agregarReporteCompleto(doc);
+                    yPos = await this.agregarReporteCompleto(doc, yPos, anchoUtil);
             }
             
             this.agregarPiePagina(doc);
@@ -114,9 +123,12 @@ class GeneradorPDF {
     }
 
     mostrarMensajeCarga(mensaje) {
-        const toast = document.createElement('div');
-        toast.id = 'pdfLoadingToast';
-        toast.style.cssText = `
+        const toast = document.getElementById('pdfLoadingToast');
+        if (toast) toast.remove();
+        
+        const nuevo = document.createElement('div');
+        nuevo.id = 'pdfLoadingToast';
+        nuevo.style.cssText = `
             position: fixed;
             bottom: 20px;
             right: 20px;
@@ -128,8 +140,8 @@ class GeneradorPDF {
             font-size: 14px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
         `;
-        toast.innerHTML = `⏳ ${mensaje}`;
-        document.body.appendChild(toast);
+        nuevo.innerHTML = `⏳ ${mensaje}`;
+        document.body.appendChild(nuevo);
     }
 
     mostrarMensajeExito(mensaje) {
@@ -194,10 +206,10 @@ class GeneradorPDF {
         });
     }
 
-    async agregarEncabezadoConLogos(doc) {
+    async agregarEncabezadoConLogos(doc, yStart, anchoUtil) {
         const pageWidth = doc.internal.pageSize.getWidth();
-        const logoWidth = 25;
-        const logoHeight = 25;
+        const logoWidth = 22;
+        const logoHeight = 22;
         
         // Logo izquierdo (Instituto)
         let logoInstitutoData = null;
@@ -209,25 +221,25 @@ class GeneradorPDF {
         
         if (logoInstitutoData) {
             try {
-                doc.addImage(logoInstitutoData, 'PNG', 15, 10, logoWidth, logoHeight);
+                doc.addImage(logoInstitutoData, 'PNG', this.margen.izquierdo, 10, logoWidth, logoHeight);
             } catch(e) {
-                this.dibujarTextoInstituto(doc, 15, 20);
+                this.dibujarTextoInstituto(doc, this.margen.izquierdo, 20);
             }
         } else {
-            this.dibujarTextoInstituto(doc, 15, 20);
+            this.dibujarTextoInstituto(doc, this.margen.izquierdo, 20);
         }
         
         // Título central
         doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
-        doc.text('SMARTGATE MONITOR', pageWidth / 2, 20, { align: 'center' });
+        doc.text('SMARTGATE MONITOR', pageWidth / 2, 18, { align: 'center' });
         
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(80, 80, 80);
-        doc.text('Sistema Predictivo de Mantenimiento', pageWidth / 2, 28, { align: 'center' });
-        doc.text('Portón Automático', pageWidth / 2, 34, { align: 'center' });
+        doc.text('Sistema Predictivo de Mantenimiento', pageWidth / 2, 26, { align: 'center' });
+        doc.text('Portón Automático', pageWidth / 2, 32, { align: 'center' });
         
         // Logo derecho (Carrera)
         let logoCarreraData = null;
@@ -239,54 +251,57 @@ class GeneradorPDF {
         
         if (logoCarreraData) {
             try {
-                doc.addImage(logoCarreraData, 'PNG', pageWidth - 40, 10, logoWidth, logoHeight);
+                doc.addImage(logoCarreraData, 'PNG', pageWidth - this.margen.derecho - logoWidth, 10, logoWidth, logoHeight);
             } catch(e) {
-                this.dibujarTextoUniversidad(doc, pageWidth - 40, 20);
+                this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 20);
             }
         } else {
-            this.dibujarTextoUniversidad(doc, pageWidth - 40, 20);
+            this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 20);
         }
         
+        // Línea separadora
         doc.setDrawColor(200, 200, 200);
-        doc.line(15, 42, pageWidth - 15, 42);
+        doc.line(this.margen.izquierdo, 42, pageWidth - this.margen.derecho, 42);
         
+        // Fecha (bien posicionada, sin salirse)
         doc.setFontSize(9);
         doc.setTextColor(120, 120, 120);
         const fechaActual = new Date().toLocaleDateString('es-ES', {
-            weekday: 'long',
             year: 'numeric',
             month: 'long',
             day: 'numeric'
         });
-        doc.text(`Fecha: ${fechaActual}`, pageWidth - 45, 50);
+        doc.text(`Fecha: ${fechaActual}`, pageWidth - this.margen.derecho - 35, 50);
         
         return 55;
     }
 
     dibujarTextoInstituto(doc, x, y) {
-        doc.setFontSize(8);
+        doc.setFontSize(7);
         doc.setTextColor(100);
         doc.text('Instituto Tecnológico', x, y);
-        doc.text('Industrial Brasil Bolivia', x, y + 5);
+        doc.text('Industrial Brasil Bolivia', x, y + 4);
     }
 
     dibujarTextoUniversidad(doc, x, y) {
-        doc.setFontSize(8);
+        doc.setFontSize(7);
         doc.setTextColor(100);
         doc.text('Ingeniería', x + 5, y);
-        doc.text('Informática', x + 5, y + 5);
+        doc.text('Informática', x + 5, y + 4);
     }
 
-    async agregarReporteCompleto(doc) {
-        let yPos = 65;
+    async agregarReporteCompleto(doc, yPos, anchoUtil) {
         const pageWidth = doc.internal.pageSize.getWidth();
+        const x = this.margen.izquierdo;
         
+        // Título sección
         doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
-        doc.text('RESUMEN GENERAL', 15, yPos);
-        yPos += 8;
+        doc.text('RESUMEN GENERAL', x, yPos);
+        yPos += 10;
         
+        // Datos
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
@@ -307,18 +322,27 @@ class GeneradorPDF {
         
         datos.forEach(([label, value]) => {
             doc.setFont('helvetica', 'bold');
-            doc.text(label, 20, yPos);
+            doc.text(label, x + 5, yPos);
             doc.setFont('helvetica', 'normal');
-            doc.text(value, 80, yPos);
+            doc.text(value, x + 55, yPos);
             yPos += 7;
         });
         
         yPos += 10;
         
+        // Verificar espacio para tabla
+        if (yPos > 250) {
+            doc.addPage();
+            yPos = this.margen.superior;
+            await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
+            yPos += 10;
+        }
+        
+        // Tabla de mantenimiento
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
-        doc.text('MANTENIMIENTO PREVENTIVO', 15, yPos);
+        doc.text('MANTENIMIENTO PREVENTIVO', x, yPos);
         yPos += 8;
         
         const tablaMantenimiento = [
@@ -328,20 +352,22 @@ class GeneradorPDF {
             ['Revisión General', '2000', this.obtenerEstadoMantenimiento(2000), `${this.obtenerCiclosRestantes(2000)} ciclos`]
         ];
         
-        this.dibujarTabla(doc, tablaMantenimiento, 15, yPos, pageWidth - 30);
-        yPos += 45;
+        yPos = this.dibujarTabla(doc, tablaMantenimiento, x, yPos, anchoUtil);
+        yPos += 10;
         
-        if (yPos > 250) {
+        // Verificar espacio
+        if (yPos > 230) {
             doc.addPage();
-            yPos = 20;
-            await this.agregarEncabezadoConLogos(doc);
-            yPos = 55;
+            yPos = this.margen.superior;
+            await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
+            yPos += 10;
         }
         
+        // Estadísticas de uso
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
-        doc.text('ESTADÍSTICAS DE USO', 15, yPos);
+        doc.text('ESTADÍSTICAS DE USO', x, yPos);
         yPos += 8;
         
         let ciclosPorDia = [];
@@ -350,27 +376,28 @@ class GeneradorPDF {
         }
         
         doc.setFontSize(9);
-        doc.text('Ciclos por día (últimos 7 días):', 15, yPos);
+        doc.text('Ciclos por día (últimos 7 días):', x, yPos);
         yPos += 5;
         
         if (ciclosPorDia.length === 0) {
-            doc.text('No hay datos disponibles', 20, yPos);
+            doc.text('No hay datos disponibles', x + 5, yPos);
             yPos += 5;
         } else {
-            ciclosPorDia.forEach(([fecha, cantidad]) => {
+            for (const [fecha, cantidad] of ciclosPorDia) {
                 if (yPos > 270) {
                     doc.addPage();
-                    yPos = 20;
-                    this.agregarEncabezadoConLogos(doc);
-                    yPos = 50;
+                    yPos = this.margen.superior;
+                    await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
+                    yPos += 10;
                 }
-                doc.text(`${fecha.substring(5)}: ${cantidad} ciclos`, 20, yPos);
+                doc.text(`${fecha.substring(5)}: ${cantidad} ciclos`, x + 5, yPos);
                 yPos += 5;
-            });
+            }
         }
         
         yPos += 5;
         
+        // Horas más activas
         let horasActivas = [];
         if (typeof mantenimiento !== 'undefined') {
             horasActivas = mantenimiento.obtenerCiclosPorHora();
@@ -381,33 +408,35 @@ class GeneradorPDF {
             .sort((a, b) => b.cantidad - a.cantidad)
             .slice(0, 5);
         
-        doc.text('Horas de mayor actividad:', 15, yPos);
+        doc.text('Horas de mayor actividad:', x, yPos);
         yPos += 5;
         
         if (horasTop.length === 0 || horasTop[0].cantidad === 0) {
-            doc.text('No hay datos de actividad disponibles', 20, yPos);
+            doc.text('No hay datos de actividad disponibles', x + 5, yPos);
         } else {
-            horasTop.forEach(({ hora, cantidad }) => {
+            for (const { hora, cantidad } of horasTop) {
                 if (yPos > 270) {
                     doc.addPage();
-                    yPos = 20;
-                    this.agregarEncabezadoConLogos(doc);
-                    yPos = 50;
+                    yPos = this.margen.superior;
+                    await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
+                    yPos += 10;
                 }
-                doc.text(`${hora}:00 - ${hora + 1}:00: ${cantidad} ciclos`, 20, yPos);
+                doc.text(`${hora}:00 - ${hora + 1}:00: ${cantidad} ciclos`, x + 5, yPos);
                 yPos += 5;
-            });
+            }
         }
+        
+        return yPos;
     }
 
-    async agregarReporteMantenimiento(doc) {
-        let yPos = 65;
+    async agregarReporteMantenimiento(doc, yPos, anchoUtil) {
+        const x = this.margen.izquierdo;
         
         doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
-        doc.text('HISTORIAL DE MANTENIMIENTO', 15, yPos);
-        yPos += 8;
+        doc.text('HISTORIAL DE MANTENIMIENTO', x, yPos);
+        yPos += 10;
         
         let historialMantenimiento = [];
         if (typeof mantenimiento !== 'undefined') {
@@ -415,7 +444,8 @@ class GeneradorPDF {
         }
         
         if (historialMantenimiento.length === 0) {
-            doc.text('No hay registros de mantenimiento previos', 20, yPos);
+            doc.text('No hay registros de mantenimiento previos', x + 5, yPos);
+            yPos += 10;
         } else {
             const tablaMantenimientos = [
                 ['Fecha', 'Tipo', 'Ciclos al momento']
@@ -429,20 +459,20 @@ class GeneradorPDF {
                 ]);
             });
             
-            this.dibujarTabla(doc, tablaMantenimientos, 15, yPos, 180);
-            yPos += 10 + (tablaMantenimientos.length * 7);
+            yPos = this.dibujarTabla(doc, tablaMantenimientos, x, yPos, anchoUtil);
+            yPos += 10;
         }
         
-        if (yPos > 250) {
+        if (yPos > 230) {
             doc.addPage();
-            yPos = 20;
-            await this.agregarEncabezadoConLogos(doc);
-            yPos = 55;
+            yPos = this.margen.superior;
+            await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
+            yPos += 10;
         }
         
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
-        doc.text('RECOMENDACIONES', 15, yPos);
+        doc.text('RECOMENDACIONES', x, yPos);
         yPos += 8;
         
         const recomendaciones = [
@@ -453,44 +483,46 @@ class GeneradorPDF {
             '• Programar mantenimiento profesional anual'
         ];
         
-        recomendaciones.forEach(rec => {
+        doc.setFontSize(9);
+        for (const rec of recomendaciones) {
             if (yPos > 270) {
                 doc.addPage();
-                yPos = 20;
-                this.agregarEncabezadoConLogos(doc);
-                yPos = 50;
+                yPos = this.margen.superior;
+                await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
+                yPos += 10;
             }
-            doc.setFontSize(9);
-            doc.text(rec, 20, yPos);
+            doc.text(rec, x + 5, yPos);
             yPos += 6;
-        });
+        }
+        
+        return yPos;
     }
 
-    async agregarReporteEstadisticas(doc) {
-        let yPos = 65;
+    async agregarReporteEstadisticas(doc, yPos, anchoUtil) {
+        const x = this.margen.izquierdo;
         
         doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
-        doc.text('ANÁLISIS DE TENDENCIAS', 15, yPos);
-        yPos += 8;
+        doc.text('ANÁLISIS DE TENDENCIAS', x, yPos);
+        yPos += 10;
         
         const totalCiclos = typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0;
         const proyeccion = Math.round(totalCiclos * 1.1);
         
         doc.setFontSize(10);
-        doc.text(`Ciclos actuales: ${totalCiclos}`, 20, yPos);
-        yPos += 6;
-        doc.text(`Proyección próximo mes: ${proyeccion} ciclos`, 20, yPos);
-        yPos += 6;
+        doc.text(`Ciclos actuales: ${totalCiclos}`, x + 5, yPos);
+        yPos += 7;
+        doc.text(`Proyección próximo mes: ${proyeccion} ciclos`, x + 5, yPos);
+        yPos += 7;
         
         const vidaUtil = 5000;
         const porcentajeVida = (totalCiclos / vidaUtil * 100).toFixed(1);
-        doc.text(`Vida útil consumida: ${porcentajeVida}%`, 20, yPos);
-        yPos += 6;
+        doc.text(`Vida útil consumida: ${porcentajeVida}%`, x + 5, yPos);
+        yPos += 7;
         
         const vidaRestante = vidaUtil - totalCiclos;
-        doc.text(`Ciclos restantes estimados: ${vidaRestante}`, 20, yPos);
+        doc.text(`Ciclos restantes estimados: ${vidaRestante}`, x + 5, yPos);
         yPos += 15;
         
         doc.setFontSize(11);
@@ -498,17 +530,19 @@ class GeneradorPDF {
         
         if (totalCiclos > 4000) {
             doc.setTextColor(220, 38, 38);
-            doc.text('⚠️ ALERTA: Se recomienda reemplazo preventivo del motor', 20, yPos);
+            doc.text('⚠️ ALERTA: Se recomienda reemplazo preventivo del motor', x + 5, yPos);
         } else if (totalCiclos > 3000) {
             doc.setTextColor(245, 158, 11);
-            doc.text('⚠️ Atención: Desgaste significativo detectado', 20, yPos);
+            doc.text('⚠️ Atención: Desgaste significativo detectado', x + 5, yPos);
         } else if (totalCiclos > 2000) {
             doc.setTextColor(59, 130, 246);
-            doc.text('ℹ️ Mantenimiento regular requerido', 20, yPos);
+            doc.text('ℹ️ Mantenimiento regular requerido', x + 5, yPos);
         } else {
             doc.setTextColor(16, 185, 129);
-            doc.text('✅ Sistema en excelente estado', 20, yPos);
+            doc.text('✅ Sistema en excelente estado', x + 5, yPos);
         }
+        
+        return yPos + 10;
     }
 
     agregarPiePagina(doc) {
@@ -522,41 +556,54 @@ class GeneradorPDF {
             doc.text(
                 `Instituto Tecnológico Industrial Brasil Bolivia - Ingeniería Informática | Página ${i} de ${pageCount}`,
                 pageWidth / 2,
-                doc.internal.pageSize.getHeight() - 10,
+                doc.internal.pageSize.getHeight() - 12,
                 { align: 'center' }
             );
         }
     }
 
-    dibujarTabla(doc, datos, x, y, width) {
-        const colWidth = width / datos[0].length;
+    dibujarTabla(doc, datos, x, y, ancho) {
+        const colCount = datos[0].length;
+        const colWidth = ancho / colCount;
         let yPos = y;
         
+        // Cabecera
         doc.setFillColor(0, 51, 102);
         doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'bold');
+        doc.setFontSize(9);
         
-        datos[0].forEach((header, i) => {
+        for (let i = 0; i < colCount; i++) {
             doc.rect(x + (i * colWidth), yPos, colWidth, 8, 'F');
-            doc.text(header, x + (i * colWidth) + 2, yPos + 5);
-        });
+            doc.text(datos[0][i], x + (i * colWidth) + 2, yPos + 5.5);
+        }
         
         yPos += 8;
         
+        // Filas
         doc.setTextColor(0, 0, 0);
         doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
         
         for (let i = 1; i < datos.length; i++) {
+            // Color alternado
             if (i % 2 === 0) {
-                doc.setFillColor(240, 240, 240);
-                doc.rect(x, yPos, width, 7, 'F');
+                doc.setFillColor(245, 245, 245);
+                doc.rect(x, yPos, ancho, 7, 'F');
             }
             
-            datos[i].forEach((cell, j) => {
-                doc.text(cell.toString(), x + (j * colWidth) + 2, yPos + 5);
-            });
+            for (let j = 0; j < colCount; j++) {
+                let texto = datos[i][j].toString();
+                // Truncar texto si es muy largo
+                if (texto.length > 20) {
+                    texto = texto.substring(0, 18) + '...';
+                }
+                doc.text(texto, x + (j * colWidth) + 2, yPos + 5);
+            }
             yPos += 7;
         }
+        
+        return yPos + 5;
     }
 
     obtenerEstadoMantenimiento(limite) {
