@@ -1,4 +1,4 @@
-// Generador de PDF - VERSIÓN TAMAÑO CARTA CON MÁRGENES CORRECTOS
+// Generador de PDF - VERSIÓN CON ESPACIADO CORREGIDO
 class GeneradorPDF {
     constructor() {
         console.log('📄 Inicializando GeneradorPDF...');
@@ -83,17 +83,18 @@ class GeneradorPDF {
             const doc = new jsPDF({
                 orientation: 'portrait',
                 unit: 'mm',
-                format: 'letter'  // Tamaño carta
+                format: 'letter'
             });
             
             doc.setFont('helvetica');
             
             const anchoUtil = doc.internal.pageSize.getWidth() - this.margen.izquierdo - this.margen.derecho;
-            let yPos = this.margen.superior;
             
-            // Agregar encabezado
-            yPos = await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
-            yPos += 8;
+            // Agregar encabezado (retorna la posición Y después del encabezado)
+            let yPos = await this.agregarEncabezadoConLogos(doc, anchoUtil);
+            
+            // Agregar espacio adicional antes del contenido
+            yPos += 15;  // Espacio extra de 15mm
             
             // Agregar contenido según tipo
             switch(tipo) {
@@ -207,7 +208,7 @@ class GeneradorPDF {
         });
     }
 
-    async agregarEncabezadoConLogos(doc, yStart, anchoUtil) {
+    async agregarEncabezadoConLogos(doc, anchoUtil) {
         const pageWidth = doc.internal.pageSize.getWidth();
         const logoWidth = 22;
         const logoHeight = 22;
@@ -274,11 +275,10 @@ class GeneradorPDF {
             month: 'long',
             day: 'numeric'
         });
-        // Posicionar fecha alineada a la derecha, dentro del margen
-        const fechaWidth = doc.getTextWidth(fechaActual);
         doc.text(fechaActual, pageWidth - this.margen.derecho - 5, 52, { align: 'right' });
         
-        return this.margen.superior;
+        // Retornar la posición Y después del encabezado (línea + espacio)
+        return 52;  // Posición después de la fecha
     }
 
     dibujarTextoInstituto(doc, x, y) {
@@ -303,9 +303,9 @@ class GeneradorPDF {
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
         doc.text('RESUMEN GENERAL', x, yPos);
-        yPos += 10;
+        yPos += 12;  // Más espacio después del título
         
-        // Datos
+        // Datos en formato de lista (no tabla)
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(0, 0, 0);
@@ -317,29 +317,29 @@ class GeneradorPDF {
         const proximoMantenimiento = document.getElementById('nextMaintenance')?.textContent || '---';
         
         const datos = [
-            ['Ciclos totales:', totalCiclos.toString()],
-            ['Ciclos hoy:', ciclosHoy.toString()],
-            ['Estado actual:', estadoActual],
-            ['Salud del sistema:', saludSistema],
-            ['Próximo mantenimiento:', proximoMantenimiento]
+            { label: 'Ciclos totales:', value: totalCiclos.toString() },
+            { label: 'Ciclos hoy:', value: ciclosHoy.toString() },
+            { label: 'Estado actual:', value: estadoActual },
+            { label: 'Salud del sistema:', value: saludSistema },
+            { label: 'Próximo mantenimiento:', value: proximoMantenimiento }
         ];
         
-        datos.forEach(([label, value]) => {
+        datos.forEach((item) => {
             doc.setFont('helvetica', 'bold');
-            doc.text(label, x + 5, yPos);
+            doc.text(item.label, x + 5, yPos);
             doc.setFont('helvetica', 'normal');
-            doc.text(value, x + 55, yPos);
-            yPos += 7;
+            doc.text(item.value, x + 55, yPos);
+            yPos += 8;  // Espacio entre líneas
         });
         
-        yPos += 10;
+        yPos += 12;  // Espacio antes de la siguiente sección
         
         // Verificar espacio para tabla
-        if (yPos > 240) {
+        if (yPos > 230) {
             doc.addPage();
-            yPos = this.margen.superior;
-            await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
-            yPos += 10;
+            yPos = this.margen.superior + 15;
+            await this.agregarEncabezadoConLogos(doc, anchoUtil);
+            yPos += 15;
         }
         
         // Tabla de mantenimiento
@@ -347,7 +347,7 @@ class GeneradorPDF {
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
         doc.text('MANTENIMIENTO PREVENTIVO', x, yPos);
-        yPos += 8;
+        yPos += 10;
         
         const tablaMantenimiento = [
             ['Tipo', 'Ciclos', 'Estado', 'Próximo'],
@@ -357,14 +357,14 @@ class GeneradorPDF {
         ];
         
         yPos = this.dibujarTabla(doc, tablaMantenimiento, x, yPos, anchoUtil);
-        yPos += 10;
+        yPos += 15;
         
         // Verificar espacio
-        if (yPos > 230) {
+        if (yPos > 220) {
             doc.addPage();
-            yPos = this.margen.superior;
-            await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
-            yPos += 10;
+            yPos = this.margen.superior + 15;
+            await this.agregarEncabezadoConLogos(doc, anchoUtil);
+            yPos += 15;
         }
         
         // Estadísticas de uso
@@ -372,7 +372,7 @@ class GeneradorPDF {
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
         doc.text('ESTADÍSTICAS DE USO', x, yPos);
-        yPos += 8;
+        yPos += 10;
         
         let ciclosPorDia = [];
         if (typeof mantenimiento !== 'undefined') {
@@ -381,25 +381,25 @@ class GeneradorPDF {
         
         doc.setFontSize(9);
         doc.text('Ciclos por día (últimos 7 días):', x, yPos);
-        yPos += 5;
+        yPos += 6;
         
         if (ciclosPorDia.length === 0) {
             doc.text('No hay datos disponibles', x + 5, yPos);
-            yPos += 5;
+            yPos += 6;
         } else {
             for (const [fecha, cantidad] of ciclosPorDia) {
                 if (yPos > 260) {
                     doc.addPage();
-                    yPos = this.margen.superior;
-                    await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
-                    yPos += 10;
+                    yPos = this.margen.superior + 15;
+                    await this.agregarEncabezadoConLogos(doc, anchoUtil);
+                    yPos += 15;
                 }
                 doc.text(`${fecha.substring(5)}: ${cantidad} ciclos`, x + 5, yPos);
                 yPos += 5;
             }
         }
         
-        yPos += 5;
+        yPos += 6;
         
         // Horas más activas
         let horasActivas = [];
@@ -413,7 +413,7 @@ class GeneradorPDF {
             .slice(0, 5);
         
         doc.text('Horas de mayor actividad:', x, yPos);
-        yPos += 5;
+        yPos += 6;
         
         if (horasTop.length === 0 || horasTop[0].cantidad === 0) {
             doc.text('No hay datos de actividad disponibles', x + 5, yPos);
@@ -421,9 +421,9 @@ class GeneradorPDF {
             for (const { hora, cantidad } of horasTop) {
                 if (yPos > 260) {
                     doc.addPage();
-                    yPos = this.margen.superior;
-                    await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
-                    yPos += 10;
+                    yPos = this.margen.superior + 15;
+                    await this.agregarEncabezadoConLogos(doc, anchoUtil);
+                    yPos += 15;
                 }
                 doc.text(`${hora}:00 - ${hora + 1}:00: ${cantidad} ciclos`, x + 5, yPos);
                 yPos += 5;
@@ -440,7 +440,7 @@ class GeneradorPDF {
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
         doc.text('HISTORIAL DE MANTENIMIENTO', x, yPos);
-        yPos += 10;
+        yPos += 12;
         
         let historialMantenimiento = [];
         if (typeof mantenimiento !== 'undefined') {
@@ -464,20 +464,20 @@ class GeneradorPDF {
             });
             
             yPos = this.dibujarTabla(doc, tablaMantenimientos, x, yPos, anchoUtil);
-            yPos += 10;
+            yPos += 15;
         }
         
         if (yPos > 230) {
             doc.addPage();
-            yPos = this.margen.superior;
-            await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
-            yPos += 10;
+            yPos = this.margen.superior + 15;
+            await this.agregarEncabezadoConLogos(doc, anchoUtil);
+            yPos += 15;
         }
         
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
         doc.text('RECOMENDACIONES', x, yPos);
-        yPos += 8;
+        yPos += 10;
         
         const recomendaciones = [
             '• Realizar inspección visual mensual del mecanismo',
@@ -491,9 +491,9 @@ class GeneradorPDF {
         for (const rec of recomendaciones) {
             if (yPos > 260) {
                 doc.addPage();
-                yPos = this.margen.superior;
-                await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
-                yPos += 10;
+                yPos = this.margen.superior + 15;
+                await this.agregarEncabezadoConLogos(doc, anchoUtil);
+                yPos += 15;
             }
             doc.text(rec, x + 5, yPos);
             yPos += 6;
@@ -509,21 +509,21 @@ class GeneradorPDF {
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
         doc.text('ANÁLISIS DE TENDENCIAS', x, yPos);
-        yPos += 10;
+        yPos += 12;
         
         const totalCiclos = typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0;
         const proyeccion = Math.round(totalCiclos * 1.1);
         
         doc.setFontSize(10);
         doc.text(`Ciclos actuales: ${totalCiclos}`, x + 5, yPos);
-        yPos += 7;
+        yPos += 8;
         doc.text(`Proyección próximo mes: ${proyeccion} ciclos`, x + 5, yPos);
-        yPos += 7;
+        yPos += 8;
         
         const vidaUtil = 5000;
         const porcentajeVida = (totalCiclos / vidaUtil * 100).toFixed(1);
         doc.text(`Vida útil consumida: ${porcentajeVida}%`, x + 5, yPos);
-        yPos += 7;
+        yPos += 8;
         
         const vidaRestante = vidaUtil - totalCiclos;
         doc.text(`Ciclos restantes estimados: ${vidaRestante}`, x + 5, yPos);
@@ -546,7 +546,7 @@ class GeneradorPDF {
             doc.text('✅ Sistema en excelente estado', x + 5, yPos);
         }
         
-        return yPos + 10;
+        return yPos + 15;
     }
 
     agregarPiePagina(doc) {
