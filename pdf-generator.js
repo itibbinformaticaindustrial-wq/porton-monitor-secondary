@@ -1,15 +1,16 @@
-// Generador de PDF - VERSIÓN CON MÁRGENES PROFESIONALES
+// Generador de PDF - VERSIÓN TAMAÑO CARTA CON MÁRGENES CORRECTOS
 class GeneradorPDF {
     constructor() {
         console.log('📄 Inicializando GeneradorPDF...');
         this.libreriasCargadas = false;
         
         // Configuración de márgenes (en mm)
+        // Carta: 216mm x 279mm
         this.margen = {
-            superior: 55,
-            izquierdo: 20,
-            derecho: 20,
-            inferior: 20
+            superior: 25,    // 2.5 cm
+            inferior: 25,    // 2.5 cm
+            izquierdo: 30,   // 3 cm
+            derecho: 25      // 2.5 cm
         };
         
         this.urlsLogos = {
@@ -78,21 +79,21 @@ class GeneradorPDF {
             }
             
             const { jsPDF } = window.jspdf;
+            // Tamaño CARTA: 'letter' = 8.5" x 11"
             const doc = new jsPDF({
                 orientation: 'portrait',
                 unit: 'mm',
-                format: 'a4'
+                format: 'letter'  // Tamaño carta
             });
             
             doc.setFont('helvetica');
             
-            // Configurar márgenes
             const anchoUtil = doc.internal.pageSize.getWidth() - this.margen.izquierdo - this.margen.derecho;
             let yPos = this.margen.superior;
             
             // Agregar encabezado
             yPos = await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
-            yPos += 10;
+            yPos += 8;
             
             // Agregar contenido según tipo
             switch(tipo) {
@@ -210,6 +211,7 @@ class GeneradorPDF {
         const pageWidth = doc.internal.pageSize.getWidth();
         const logoWidth = 22;
         const logoHeight = 22;
+        const x = this.margen.izquierdo;
         
         // Logo izquierdo (Instituto)
         let logoInstitutoData = null;
@@ -221,12 +223,12 @@ class GeneradorPDF {
         
         if (logoInstitutoData) {
             try {
-                doc.addImage(logoInstitutoData, 'PNG', this.margen.izquierdo, 10, logoWidth, logoHeight);
+                doc.addImage(logoInstitutoData, 'PNG', x, 10, logoWidth, logoHeight);
             } catch(e) {
-                this.dibujarTextoInstituto(doc, this.margen.izquierdo, 20);
+                this.dibujarTextoInstituto(doc, x, 20);
             }
         } else {
-            this.dibujarTextoInstituto(doc, this.margen.izquierdo, 20);
+            this.dibujarTextoInstituto(doc, x, 20);
         }
         
         // Título central
@@ -261,19 +263,22 @@ class GeneradorPDF {
         
         // Línea separadora
         doc.setDrawColor(200, 200, 200);
-        doc.line(this.margen.izquierdo, 42, pageWidth - this.margen.derecho, 42);
+        doc.line(x, 42, pageWidth - this.margen.derecho, 42);
         
-        // Fecha (bien posicionada, sin salirse)
+        // FECHA - DENTRO DEL MARGEN DERECHO
         doc.setFontSize(9);
         doc.setTextColor(120, 120, 120);
         const fechaActual = new Date().toLocaleDateString('es-ES', {
+            weekday: 'long',
             year: 'numeric',
             month: 'long',
             day: 'numeric'
         });
-        doc.text(`Fecha: ${fechaActual}`, pageWidth - this.margen.derecho - 35, 50);
+        // Posicionar fecha alineada a la derecha, dentro del margen
+        const fechaWidth = doc.getTextWidth(fechaActual);
+        doc.text(fechaActual, pageWidth - this.margen.derecho - 5, 52, { align: 'right' });
         
-        return 55;
+        return this.margen.superior;
     }
 
     dibujarTextoInstituto(doc, x, y) {
@@ -291,7 +296,6 @@ class GeneradorPDF {
     }
 
     async agregarReporteCompleto(doc, yPos, anchoUtil) {
-        const pageWidth = doc.internal.pageSize.getWidth();
         const x = this.margen.izquierdo;
         
         // Título sección
@@ -331,7 +335,7 @@ class GeneradorPDF {
         yPos += 10;
         
         // Verificar espacio para tabla
-        if (yPos > 250) {
+        if (yPos > 240) {
             doc.addPage();
             yPos = this.margen.superior;
             await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
@@ -384,7 +388,7 @@ class GeneradorPDF {
             yPos += 5;
         } else {
             for (const [fecha, cantidad] of ciclosPorDia) {
-                if (yPos > 270) {
+                if (yPos > 260) {
                     doc.addPage();
                     yPos = this.margen.superior;
                     await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
@@ -415,7 +419,7 @@ class GeneradorPDF {
             doc.text('No hay datos de actividad disponibles', x + 5, yPos);
         } else {
             for (const { hora, cantidad } of horasTop) {
-                if (yPos > 270) {
+                if (yPos > 260) {
                     doc.addPage();
                     yPos = this.margen.superior;
                     await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
@@ -485,7 +489,7 @@ class GeneradorPDF {
         
         doc.setFontSize(9);
         for (const rec of recomendaciones) {
-            if (yPos > 270) {
+            if (yPos > 260) {
                 doc.addPage();
                 yPos = this.margen.superior;
                 await this.agregarEncabezadoConLogos(doc, yPos, anchoUtil);
@@ -586,7 +590,6 @@ class GeneradorPDF {
         doc.setFontSize(9);
         
         for (let i = 1; i < datos.length; i++) {
-            // Color alternado
             if (i % 2 === 0) {
                 doc.setFillColor(245, 245, 245);
                 doc.rect(x, yPos, ancho, 7, 'F');
@@ -594,7 +597,6 @@ class GeneradorPDF {
             
             for (let j = 0; j < colCount; j++) {
                 let texto = datos[i][j].toString();
-                // Truncar texto si es muy largo
                 if (texto.length > 20) {
                     texto = texto.substring(0, 18) + '...';
                 }
