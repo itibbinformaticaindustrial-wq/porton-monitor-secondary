@@ -1,4 +1,4 @@
-// Sistema de mantenimiento mejorado
+// Sistema de mantenimiento - VERSIÓN CORREGIDA
 class SistemaMantenimiento {
     constructor() {
         this.ciclos = this.cargarCiclos();
@@ -6,6 +6,7 @@ class SistemaMantenimiento {
         this.alertas = [];
         this.historialMantenimiento = this.cargarHistorialMantenimiento();
         this.cicloActual = null;
+        this.ultimoEstadoRegistrado = null; // Para debug
     }
 
     cargarCiclos() {
@@ -25,23 +26,42 @@ class SistemaMantenimiento {
 
     guardarCiclos() {
         localStorage.setItem('porton_ciclos_avanzado', JSON.stringify(this.ciclos));
+        console.log(`💾 Ciclos guardados: ${this.ciclos.total}`);
     }
 
     guardarHistorialMantenimiento() {
         localStorage.setItem('porton_historial_mantenimiento', JSON.stringify(this.historialMantenimiento));
     }
 
+    // ============================================================
+    // FUNCIÓN PRINCIPAL: DETECTA CICLOS (ABIERTO + CERRADO)
+    // ============================================================
     procesarCambioEstado(nuevoEstado, timestamp) {
+        console.log(`🔄 Procesando cambio de estado: "${this.ultimoEstado}" → "${nuevoEstado}"`);
+        
+        // Detectar inicio de ciclo: cuando pasa de CERRADO a ABIERTO
         if (this.ultimoEstado === 'CERRADO' && nuevoEstado === 'ABIERTO') {
+            console.log('🚪 INICIO DE CICLO DETECTADO (CERRADO → ABIERTO)');
             this.iniciarCiclo(timestamp);
-        } else if (this.ultimoEstado === 'ABIERTO' && nuevoEstado === 'CERRADO') {
+        }
+        
+        // Detectar fin de ciclo: cuando pasa de ABIERTO a CERRADO
+        if (this.ultimoEstado === 'ABIERTO' && nuevoEstado === 'CERRADO') {
+            console.log('🔒 FIN DE CICLO DETECTADO (ABIERTO → CERRADO)');
             this.completarCiclo(timestamp);
         }
+        
+        // Guardar el estado actual para la próxima vez
         this.ultimoEstado = nuevoEstado;
+        this.ultimoEstadoRegistrado = nuevoEstado;
+        
+        // Mostrar en consola el total actual
+        console.log(`📊 Total de ciclos hasta ahora: ${this.ciclos.total}`);
     }
 
     iniciarCiclo(timestamp) {
         this.cicloActual = { inicio: timestamp };
+        console.log(`⏱️ Ciclo iniciado a las ${new Date(timestamp).toLocaleTimeString()}`);
     }
 
     completarCiclo(timestamp) {
@@ -62,6 +82,14 @@ class SistemaMantenimiento {
             this.verificarAlertasMantenimiento();
             this.actualizarPredicciones();
             this.cicloActual = null;
+            
+            console.log(`✅ CICLO #${this.ciclos.total} COMPLETADO!`);
+            
+            // Actualizar UI
+            actualizarEstadisticas();
+            actualizarGraficos();
+        } else {
+            console.warn('⚠️ Se detectó cierre sin un inicio de ciclo previo');
         }
     }
 
