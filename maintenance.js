@@ -1,15 +1,20 @@
-// Sistema de mantenimiento - CONTADOR DE CICLOS POR SENSORES
+// Sistema de mantenimiento - CONTADOR DE CICLOS POR FLANCO DE SENSOR
 class SistemaMantenimiento {
     constructor() {
         this.ciclos = this.cargarCiclos();
-        this.ultimoEstadoSensor = {
+        
+        // Estado ANTERIOR de los sensores (para detectar flancos)
+        this.estadoAnterior = {
             abierto: false,
             cerrado: false
         };
+        
+        // Bandera para evitar múltiples conteos en un mismo ciclo
+        this.ultimoCicloRegistrado = null;
+        
         this.alertas = [];
         this.historialMantenimiento = this.cargarHistorialMantenimiento();
-        this.cicloActual = null;
-        this.ultimoEstadoPorton = null; // Para debug
+        this.ultimoEstadoPorton = null;
     }
 
     cargarCiclos() {
@@ -37,32 +42,59 @@ class SistemaMantenimiento {
     }
 
     // ============================================================
-    // MÉTODO 1: Procesar cambio de estado (por si se usa)
+    // MÉTODO 1: Procesar cambio de estado (solo para mostrar)
     // ============================================================
     procesarCambioEstado(nuevoEstado, timestamp) {
         console.log(`🔄 Estado del portón: ${nuevoEstado}`);
         this.ultimoEstadoPorton = nuevoEstado;
-        // No usamos esto para contar ciclos, solo para mostrar estado
     }
 
     // ============================================================
-    // MÉTODO PRINCIPAL: Procesar sensores de final de carrera
-    // Cada vez que cerrado pasa de false a true = 1 CICLO
+    // MÉTODO PRINCIPAL: Procesar sensores con DETECCIÓN DE FLANCO
+    // Solo cuenta cuando cerrado pasa de false → true
     // ============================================================
     procesarSensores(sensores, timestamp) {
-        const abierto = sensores.abierto === true;
-        const cerrado = sensores.cerrado === true;
+        const abiertoActual = sensores.abierto === true;
+        const cerradoActual = sensores.cerrado === true;
         
-        console.log(`📡 Sensores: ABIERTO=${abierto}, CERRADO=${cerrado}`);
+        const abiertoAnterior = this.estadoAnterior.abierto;
+        const cerradoAnterior = this.estadoAnterior.cerrado;
         
-        // Detectar flanco de cierre: cerrado pasa de false a true
-        if (!this.ultimoEstadoSensor.cerrado && cerrado) {
-            console.log('🔒 FLANCO DE CIERRE DETECTADO (sensor cerrado activado)');
+        // Detectar FLANCO DE SUBIDA en cerrado (false → true)
+        const flancoCerrado = (!cerradoAnterior && cerradoActual);
+        
+        if (flancoCerrado) {
+            console.log(`🔒 FLANCO DE CIERRE DETECTADO: cerrado cambió de ${cerradoAnterior} → ${cerradoActual}`);
+            
+            // Verificar que no sea un ciclo duplicado (mismo segundo)
+            const ahora = new Date(timestamp);
+            if (this.ultimoCicloRegistrado) {
+                const diffMs = ahora - this.ultimoCicloRegistrado;
+                if (diffMs < 1000) {
+                    console.log(`⚠️ Ciclo ignorado (mismo segundo, diferencia de ${diffMs}ms)`);
+                    this.actualizarEstadoAnterior(abiertoActual, cerradoActual);
+                    return;
+                }
+            }
+            
             this.completarCiclo(timestamp);
+            this.ultimoCicloRegistrado = ahora;
+        } else {
+            // Solo mostrar log si hay cambio relevante
+            if (abiertoActual !== abiertoAnterior) {
+                console.log(`📡 Sensor ABIERTO: ${abiertoAnterior} → ${abiertoActual}`);
+            }
+            if (cerradoActual !== cerradoAnterior) {
+                console.log(`📡 Sensor CERRADO: ${cerradoAnterior} → ${cerradoActual}`);
+            }
         }
         
-        // Guardar estados actuales para la próxima comparación
-        this.ultimoEstadoSensor = {
+        // Actualizar estado anterior para la próxima comparación
+        this.actualizarEstadoAnterior(abiertoActual, cerradoActual);
+    }
+    
+    actualizarEstadoAnterior(abierto, cerrado) {
+        this.estadoAnterior = {
             abierto: abierto,
             cerrado: cerrado
         };
@@ -76,7 +108,8 @@ class SistemaMantenimiento {
             timestamp: timestamp,
             fecha: new Date(timestamp).toISOString().split('T')[0],
             hora: new Date(timestamp).getHours(),
-            minuto: new Date(timestamp).getMinutes()
+            minuto: new Date(timestamp).getMinutes(),
+            segundo: new Date(timestamp).getSeconds()
         };
         
         this.ciclos.historial.push(datosCiclo);
@@ -93,6 +126,15 @@ class SistemaMantenimiento {
         }
         if (typeof actualizarGraficos === 'function') {
             actualizarGraficos();
+        }
+        
+        // Mostrar notificación si está habilitada
+        if (typeof notificaciones !== 'undefined' && notificaciones.config.mantenimiento) {
+            notificaciones.enviarNotificacion(
+                'Ciclo Registrado',
+                `Ciclo #${this.ciclos.total} completado. Próximo mantenimiento en ${500 - (this.ciclos.total % 500)} ciclos.`,
+                'info'
+            );
         }
     }
 
@@ -340,7 +382,8 @@ class SistemaMantenimiento {
     obtenerCiclosPorHora() {
         const porHora = Array(24).fill(0);
         this.ciclos.historial.forEach(ciclo => {
-            porHora[ciclo.hora]++;
+            const hora = new Date(ciclo.timestamp).getHours();
+            porHora[hora]++;
         });
         return porHora;
     }
