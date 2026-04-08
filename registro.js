@@ -44,10 +44,23 @@ class RegistroEventos {
             timeline.innerHTML = '';
         }
         
-        const icono = evento.tipo === 'ESTADO' ? '🚪' : 
-                      evento.tipo === 'SENSORES' ? '📡' : '💓';
+        let icono = '📡';
+        if (evento.tipo === 'ESTADO') icono = '🚪';
+        else if (evento.tipo === 'SENSORES') icono = '📡';
+        else if (evento.tipo === 'HEARTBEAT') icono = '💓';
         
-        const detalles = evento.datos.estado || evento.datos.abierto || 'Actividad';
+        // Obtener texto descriptivo según el tipo
+        let descripcion = '';
+        if (evento.tipo === 'ESTADO') {
+            descripcion = evento.datos.estado || 'Cambio de estado';
+        } else if (evento.tipo === 'SENSORES') {
+            const sensores = [];
+            if (evento.datos.abierto) sensores.push('ABIERTO');
+            if (evento.datos.cerrado) sensores.push('CERRADO');
+            descripcion = sensores.join(' | ') || 'Lectura de sensores';
+        } else if (evento.tipo === 'HEARTBEAT') {
+            descripcion = evento.datos.online ? 'ESP32 Online' : 'ESP32 Offline';
+        }
         
         const elemento = document.createElement('div');
         elemento.className = 'timeline-item';
@@ -56,7 +69,7 @@ class RegistroEventos {
             <div class="timeline-icon">${icono}</div>
             <div class="timeline-content">
                 <div class="timeline-title">${evento.tipo}</div>
-                <div class="timeline-desc">${detalles}</div>
+                <div class="timeline-desc">${descripcion}</div>
             </div>
         `;
         
@@ -93,7 +106,7 @@ class RegistroEventos {
         const filtrados = this.filtrarEventos();
         
         if (filtrados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4">No hay eventos registrados</td>' + '</td>';
+            tbody.innerHTML = '<tr><td colspan="4">No hay eventos registrados</td>' + '</tr>';
             return;
         }
         
@@ -101,7 +114,7 @@ class RegistroEventos {
             <tr>
                 <td>${new Date(evento.timestamp).toLocaleString()}</td>
                 <td><strong>${evento.tipo}</strong></td>
-                <td>${evento.datos.estado || evento.datos.abierto || '-'}</td>
+                <td>${evento.datos.estado || evento.datos.abierto || evento.datos.online || '-'}</td>
                 <td>${this.formatearDetalles(evento.datos)}</td>
             </tr>
         `).join('');
@@ -142,17 +155,51 @@ class RegistroEventos {
         return filtrados;
     }
 
+    // ============================================================
+    // FUNCIÓN FORMATEAR DETALLES - ACTUALIZADA CON TODOS LOS CAMPOS
+    // ============================================================
     formatearDetalles(datos) {
         const detalles = [];
-        if (datos.modoAuto !== undefined) detalles.push(`Auto:${datos.modoAuto}`);
-        if (datos.emergenciaActiva) detalles.push('🚨 Emergencia');
-        if (datos.permisoEspecial) detalles.push('🔑 Permiso Especial');
-        if (datos.horarioActivo) detalles.push('⏰ Modo Horario');
-        if (datos.abierto === true) detalles.push('Sensor ABIERTO');
-        if (datos.cerrado === true) detalles.push('Sensor CERRADO');
-        if (datos.fotoHabilitado === true) detalles.push('📷 Fotocélula OK');
-        if (datos.botonFisicoHabilitado === true) detalles.push('🔘 Botón Físico OK');
-        return detalles.join(' | ') || 'Sin detalles';
+        
+        // Estado del portón
+        if (datos.estado) detalles.push(`🚪 ${datos.estado}`);
+        
+        // Modos y configuraciones
+        if (datos.modoAuto !== undefined) detalles.push(`🤖 Auto: ${datos.modoAuto ? 'ON' : 'OFF'}`);
+        if (datos.fotoHabilitado !== undefined) detalles.push(`📷 Foto: ${datos.fotoHabilitado ? 'ON' : 'OFF'}`);
+        if (datos.botonFisicoHabilitado !== undefined) detalles.push(`🎮 Botón: ${datos.botonFisicoHabilitado ? 'ON' : 'OFF'}`);
+        if (datos.pirHabilitado !== undefined) detalles.push(`🚪 PIR: ${datos.pirHabilitado ? 'ON' : 'OFF'}`);
+        if (datos.modoHorario !== undefined) detalles.push(`⏰ Horario: ${datos.modoHorario ? 'ON' : 'OFF'}`);
+        if (datos.horarioActivo !== undefined) detalles.push(`📅 Horario activo: ${datos.horarioActivo ? 'Sí' : 'No'}`);
+        
+        // Emergencias
+        if (datos.emergenciaActiva) detalles.push('🛑 EMERGENCIA LOCAL');
+        if (datos.emergenciaRemotaActiva) detalles.push('🌐 EMERGENCIA REMOTA');
+        
+        // Permiso especial
+        if (datos.permisoEspecial) {
+            const tiempo = datos.tiempoPermiso ? ` ${datos.tiempoPermiso}s` : '';
+            detalles.push(`🔑 PERMISO ESPECIAL${tiempo}`);
+        }
+        
+        // Motor y chapa
+        if (datos.motorActivo !== undefined) detalles.push(`⚙️ Motor: ${datos.motorActivo ? 'ACTIVO' : 'OFF'}`);
+        if (datos.chapaActiva !== undefined) detalles.push(`🔐 Chapa: ${datos.chapaActiva ? 'ON' : 'OFF'}`);
+        if (datos.movimientoSolicitado !== undefined) detalles.push(`🏃 Movimiento: ${datos.movimientoSolicitado ? 'Solicitado' : 'No'}`);
+        
+        // Sensores de final de carrera
+        if (datos.abierto === true) detalles.push('🔓 Sensor ABIERTO');
+        if (datos.cerrado === true) detalles.push('🔒 Sensor CERRADO');
+        
+        // Heartbeat
+        if (datos.online !== undefined) detalles.push(datos.online ? '💚 ESP32 Online' : '🖤 ESP32 Offline');
+        
+        // Si no hay detalles, mostrar mensaje por defecto
+        if (detalles.length === 0) {
+            return 'Sin detalles';
+        }
+        
+        return detalles.join(' | ');
     }
 
     exportarCSV() {
@@ -160,7 +207,7 @@ class RegistroEventos {
         const filas = this.eventos.map(evento => [
             evento.timestamp,
             evento.tipo,
-            evento.datos.estado || evento.datos.abierto || '',
+            evento.datos.estado || evento.datos.abierto || evento.datos.online || '',
             this.formatearDetalles(evento.datos)
         ]);
         
@@ -212,6 +259,7 @@ class RegistroEventos {
 
 const registro = new RegistroEventos();
 
+// Funciones globales
 function exportToCSV() { registro.exportarCSV(); }
 function exportToJSON() { registro.exportarJSON(); }
 function clearEvents() { registro.limpiarDatos(); }
