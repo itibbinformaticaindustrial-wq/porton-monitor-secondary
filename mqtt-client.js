@@ -99,9 +99,7 @@ function handleMQTTMessage(topic, data) {
             
         case 'porton/sensores':
             registro.agregarEvento('SENSORES', data);
-            // ============================================
-            // AQUÍ SE PROCESAN LOS SENSORES PARA CONTAR CICLOS
-            // ============================================
+            // PROCESAR SENSORES PARA CONTAR CICLOS (flanco de subida)
             mantenimiento.procesarSensores(data, timestamp);
             break;
             
@@ -115,6 +113,7 @@ function handleMQTTMessage(topic, data) {
     }
 }
 
+// Iniciar conexión cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
     connectMQTT();
 });
