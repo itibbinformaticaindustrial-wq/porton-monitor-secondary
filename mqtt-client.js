@@ -3,11 +3,11 @@
 // ============================================================
 
 const MQTT_CONFIG = {
-    broker: 'wss://fce01a048733432a9eae2f8d8454ef46.s1.eu.hivemq.cloud:8884/mqtt',
+    broker: 'wss://d21941469193416fabcba46336fd0980.s1.eu.hivemq.cloud:8884/mqtt',
     options: {
         clientId: 'porton_monitor_' + Math.random().toString(16).substr(2, 8),
-        username: 'prueba',
-        password: 'Prueba2026',
+        username: 'prueba_itibb',
+        password: 'Porton2026',
         clean: true,
         reconnectPeriod: 5000,
         connectTimeout: 30000,
