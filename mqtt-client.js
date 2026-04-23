@@ -1,12 +1,12 @@
 // ============================================================
-// CONFIGURACIÓN MQTT PARA BROKER PRIVADO DE HIVEMQ CLOUD
+// CONFIGURACIÓN MQTT - NUEVAS CREDENCIALES
 // ============================================================
 
 const MQTT_CONFIG = {
     broker: 'wss://d21941469193416fabcba46336fd0980.s1.eu.hivemq.cloud:8884/mqtt',
     options: {
         clientId: 'porton_monitor_' + Math.random().toString(16).substr(2, 8),
-        username: 'prueba_itibb',
+        username: 'porton_itibb',
         password: 'Porton2026',
         clean: true,
         reconnectPeriod: 5000,
@@ -16,7 +16,8 @@ const MQTT_CONFIG = {
     topics: {
         estado: 'porton/estado',
         sensores: 'porton/sensores',
-        heartbeat: 'porton/heartbeat'
+        heartbeat: 'porton/heartbeat',
+        comandos: 'porton/comandos'
     }
 };
 
@@ -99,7 +100,7 @@ function handleMQTTMessage(topic, data) {
             
         case 'porton/sensores':
             registro.agregarEvento('SENSORES', data);
-            // PROCESAR SENSORES PARA CONTAR CICLOS (flanco de subida)
+            // CONTAR CICLOS CUANDO EL SENSOR CERRADO SE ACTIVA
             mantenimiento.procesarSensores(data, timestamp);
             break;
             
@@ -113,7 +114,6 @@ function handleMQTTMessage(topic, data) {
     }
 }
 
-// Iniciar conexión cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
     connectMQTT();
 });
