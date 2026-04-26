@@ -5,6 +5,9 @@
 // Contraseña: Porton2026
 // ============================================================
 
+// Variable GLOBAL para que registro.js pueda acceder a los ciclos del día
+let globalCiclosHoy = 0;
+
 const MQTT_CONFIG = {
     broker: 'wss://d21941469193416fabcba46336fd0980.s1.eu.hivemq.cloud:8884/mqtt',
     options: {
@@ -34,6 +37,12 @@ function cargarTotalAcumulado() {
     const guardado = localStorage.getItem('porton_total_acumulado');
     totalAcumulado = guardado ? parseInt(guardado) : 0;
     console.log(`📊 Total acumulado cargado: ${totalAcumulado} ciclos`);
+    
+    if (typeof mantenimiento !== 'undefined') {
+        mantenimiento.ciclos.total = totalAcumulado;
+        mantenimiento.guardarCiclos();
+        if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
+    }
 }
 
 // Guardar total acumulado
@@ -45,7 +54,6 @@ function guardarTotalAcumulado() {
 function connectMQTT() {
     console.log('🔌 Conectando a MQTT broker:', MQTT_CONFIG.broker);
     
-    // Cargar total acumulado al iniciar
     cargarTotalAcumulado();
     
     mqttClient = mqtt.connect(MQTT_CONFIG.broker, MQTT_CONFIG.options);
@@ -101,109 +109,6 @@ function updateMQTTStatus(connected) {
     }
 }
 
-function handleMQTTMessage(topic, data) {
-    const timestamp = new Date().toISOString();
-    const ahora = new Date();
-    const hoy = ahora.toISOString().split('T')[0];
-    
-    switch(topic) {
-        case 'porton/estado':
-            const stateSpan = document.getElementById('currentState');
-            if (stateSpan && data.estado) {
-                stateSpan.textContent = data.estado;
-                console.log(`🚪 Estado actualizado: ${data.estado}`);
-            }
-            registro.agregarEvento('ESTADO', data);
-            actualizarEstadisticas();
-            actualizarGraficos();
-            if (typeof notificaciones !== 'undefined') {
-                notificaciones.alertaEstado(data.estado);
-            }
-            break;
-            
-        case 'porton/sensores':
-            registro.agregarEvento('SENSORES', data);
-            mantenimiento.procesarSensores(data, timestamp);
-            break;
-            
-        case 'porton/heartbeat':
-            lastHeartbeat = data.online;
-            registro.agregarEvento('HEARTBEAT', { online: data.online });
-            break;
-            
-        case 'porton/contador/valor':
-            // ============================================
-            // EL ESP32 MANDA LOS CICLOS DEL DÍA
-            // NOSOTROS ACUMULAMOS PARA EL TOTAL HISTÓRICO
-            // ============================================
-            const ciclosHoyRecibidos = data.ciclos;
-            
-            if (ciclosHoyRecibidos !== undefined) {
-                // Verificar si es un nuevo día (el contador se reinició)
-                const ultimaFecha = localStorage.getItem('ultima_fecha_contador');
-                const fechaActual = hoy;
-                
-                if (ultimaFecha !== fechaActual && ciclosHoyRecibidos < ultimoCicloRecibido) {
-                    // ¡Nuevo día! El ESP32 reinició su contador
-                    console.log(`🔄 Nuevo día detectado: ${fechaActual}`);
-                    
-                    // Guardar el total del día anterior en el historial
-                    const ciclosAyer = ultimoCicloRecibido;
-                    if (ciclosAyer > 0) {
-                        guardarCicloDiario(ultimaFecha, ciclosAyer);
-                        console.log(`📅 Ciclos del día ${ultimaFecha}: ${ciclosAyer}`);
-                    }
-                    
-                    // Reiniciar el contador del día
-                    ultimoCicloRecibido = 0;
-                }
-                
-                // Calcular nuevos ciclos (diferencia desde la última lectura)
-                let nuevosCiclos = 0;
-                if (ciclosHoyRecibidos >= ultimoCicloRecibido) {
-                    nuevosCiclos = ciclosHoyRecibidos - ultimoCicloRecibido;
-                } else {
-                    // Reinicio sin cambio de día (por si acaso)
-                    nuevosCiclos = ciclosHoyRecibidos;
-                }
-                
-                if (nuevosCiclos > 0) {
-                    // Sumar al total acumulado
-                    totalAcumulado += nuevosCiclos;
-                    guardarTotalAcumulado();
-                    
-                    console.log(`📊 +${nuevosCiclos} ciclos nuevos`);
-                    console.log(`📈 Total acumulado: ${totalAcumulado} ciclos`);
-                    console.log(`📅 Ciclos hoy (ESP32): ${ciclosHoyRecibidos}`);
-                    
-                    // Actualizar mantenimiento
-                    mantenimiento.ciclos.total = totalAcumulado;
-                    mantenimiento.guardarCiclos();
-                    
-                    // Actualizar UI
-                    actualizarEstadisticas();
-                    actualizarGraficos();
-                    
-                    // Registrar evento
-                    registro.agregarEvento('CONTADOR', { 
-                        ciclosHoy: ciclosHoyRecibidos,
-                        totalAcumulado: totalAcumulado,
-                        nuevos: nuevosCiclos,
-                        timestamp: data.timestamp 
-                    });
-                }
-                
-                // Guardar para la próxima comparación
-                ultimoCicloRecibido = ciclosHoyRecibidos;
-                localStorage.setItem('ultima_fecha_contador', fechaActual);
-            }
-            break;
-            
-        default:
-            console.log(`Topic no manejado: ${topic}`, data);
-    }
-}
-
 function guardarCicloDiario(fecha, ciclos) {
     let historialDiario = JSON.parse(localStorage.getItem('historial_diario') || '[]');
     const index = historialDiario.findIndex(item => item.fecha === fecha);
@@ -226,6 +131,121 @@ function guardarCicloDiario(fecha, ciclos) {
     }
     
     localStorage.setItem('historial_diario', JSON.stringify(historialDiario));
+    console.log(`📅 Guardado ciclo diario: ${fecha} → ${ciclos} ciclos`);
+}
+
+function handleMQTTMessage(topic, data) {
+    const timestamp = new Date().toISOString();
+    const ahora = new Date();
+    const hoy = ahora.toISOString().split('T')[0];
+    
+    switch(topic) {
+        case 'porton/estado':
+            const stateSpan = document.getElementById('currentState');
+            if (stateSpan && data.estado) {
+                stateSpan.textContent = data.estado;
+                console.log(`🚪 Estado actualizado: ${data.estado}`);
+            }
+            if (typeof registro !== 'undefined') {
+                registro.agregarEvento('ESTADO', data);
+            }
+            if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
+            if (typeof actualizarGraficos === 'function') actualizarGraficos();
+            if (typeof notificaciones !== 'undefined') {
+                notificaciones.alertaEstado(data.estado);
+            }
+            break;
+            
+        case 'porton/sensores':
+            if (typeof registro !== 'undefined') {
+                registro.agregarEvento('SENSORES', data);
+            }
+            if (typeof mantenimiento !== 'undefined') {
+                mantenimiento.procesarSensores(data, timestamp);
+            }
+            break;
+            
+        case 'porton/heartbeat':
+            lastHeartbeat = data.online;
+            if (typeof registro !== 'undefined') {
+                registro.agregarEvento('HEARTBEAT', { online: data.online });
+            }
+            break;
+            
+        case 'porton/contador/valor':
+            const ciclosHoyRecibidos = data.ciclos;
+            
+            if (ciclosHoyRecibidos !== undefined) {
+                // Actualizar variable GLOBAL para que registro.js la vea
+                globalCiclosHoy = ciclosHoyRecibidos;
+                
+                const ultimaFecha = localStorage.getItem('ultima_fecha_contador');
+                const fechaActual = hoy;
+                
+                if (ultimaFecha && ultimaFecha !== fechaActual && ciclosHoyRecibidos < ultimoCicloRecibido) {
+                    console.log(`🔄 Nuevo día detectado: ${fechaActual}`);
+                    
+                    const ciclosAyer = ultimoCicloRecibido;
+                    if (ciclosAyer > 0) {
+                        guardarCicloDiario(ultimaFecha, ciclosAyer);
+                        console.log(`📅 Ciclos del día ${ultimaFecha}: ${ciclosAyer}`);
+                    }
+                    
+                    ultimoCicloRecibido = 0;
+                }
+                
+                let nuevosCiclos = 0;
+                if (ciclosHoyRecibidos >= ultimoCicloRecibido) {
+                    nuevosCiclos = ciclosHoyRecibidos - ultimoCicloRecibido;
+                } else {
+                    nuevosCiclos = ciclosHoyRecibidos;
+                }
+                
+                if (nuevosCiclos > 0) {
+                    totalAcumulado += nuevosCiclos;
+                    guardarTotalAcumulado();
+                    
+                    console.log(`📊 +${nuevosCiclos} ciclos nuevos`);
+                    console.log(`📈 Total acumulado: ${totalAcumulado} ciclos`);
+                    console.log(`📅 Ciclos hoy (ESP32): ${ciclosHoyRecibidos}`);
+                    
+                    if (typeof mantenimiento !== 'undefined') {
+                        mantenimiento.ciclos.total = totalAcumulado;
+                        mantenimiento.guardarCiclos();
+                    }
+                    
+                    if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
+                    if (typeof actualizarGraficos === 'function') actualizarGraficos();
+                    
+                    if (typeof registro !== 'undefined') {
+                        registro.agregarEvento('CONTADOR', { 
+                            ciclosHoy: ciclosHoyRecibidos,
+                            totalAcumulado: totalAcumulado,
+                            nuevos: nuevosCiclos,
+                            timestamp: data.timestamp 
+                        });
+                    }
+                }
+                
+                ultimoCicloRecibido = ciclosHoyRecibidos;
+                localStorage.setItem('ultima_fecha_contador', fechaActual);
+                
+                // Actualizar la UI directamente
+                const todayCyclesSpan = document.getElementById('todayCycles');
+                if (todayCyclesSpan) {
+                    todayCyclesSpan.textContent = ciclosHoyRecibidos;
+                }
+                
+                const totalCyclesSpan = document.getElementById('totalCycles');
+                if (totalCyclesSpan) {
+                    totalCyclesSpan.textContent = totalAcumulado;
+                }
+            }
+            break;
+            
+        default:
+            console.log(`Topic no manejado: ${topic}`, data);
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
