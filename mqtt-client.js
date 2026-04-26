@@ -36,7 +36,6 @@ function connectMQTT() {
         console.log('✅ Conectado a HiveMQ Cloud');
         updateMQTTStatus(true);
         
-        // Suscribirse a todos los topics
         Object.values(MQTT_CONFIG.topics).forEach(topic => {
             mqttClient.subscribe(topic, { qos: 1 }, (err) => {
                 if (!err) {
@@ -104,7 +103,6 @@ function handleMQTTMessage(topic, data) {
             
         case 'porton/sensores':
             registro.agregarEvento('SENSORES', data);
-            // PROCESAR SENSORES PARA CONTAR CICLOS (flanco de subida)
             mantenimiento.procesarSensores(data, timestamp);
             break;
             
@@ -113,20 +111,16 @@ function handleMQTTMessage(topic, data) {
             registro.agregarEvento('HEARTBEAT', { online: data.online });
             break;
             
-        // ============================================================
-        // NUEVO: PROCESAR CONTADOR DEL ESP32
-        // ============================================================
         case 'porton/contador/valor':
             console.log(`📊 Contador ESP32: ${data.ciclos} ciclos`);
-            if (data.ciclos !== undefined && data.ciclos > mantenimiento.ciclos.total) {
+            if (data.ciclos !== undefined) {
                 mantenimiento.ciclos.total = data.ciclos;
                 mantenimiento.guardarCiclos();
                 actualizarEstadisticas();
                 actualizarGraficos();
+                registro.agregarEvento('CONTADOR', { ciclos: data.ciclos, timestamp: data.timestamp });
                 console.log(`✅ Sincronizado con ESP32: ${data.ciclos} ciclos totales`);
             }
-            // Guardar también en el registro
-            registro.agregarEvento('CONTADOR', { ciclos: data.ciclos, timestamp: data.timestamp });
             break;
             
         default:
@@ -134,7 +128,6 @@ function handleMQTTMessage(topic, data) {
     }
 }
 
-// Iniciar conexión cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
     connectMQTT();
 });
