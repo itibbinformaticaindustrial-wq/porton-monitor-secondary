@@ -19,7 +19,8 @@ const MQTT_CONFIG = {
     topics: {
         estado: 'porton/estado',
         sensores: 'porton/sensores',
-        heartbeat: 'porton/heartbeat'
+        heartbeat: 'porton/heartbeat',
+        contador: 'porton/contador/valor'
     }
 };
 
@@ -110,6 +111,22 @@ function handleMQTTMessage(topic, data) {
         case 'porton/heartbeat':
             lastHeartbeat = data.online;
             registro.agregarEvento('HEARTBEAT', { online: data.online });
+            break;
+            
+        // ============================================================
+        // NUEVO: PROCESAR CONTADOR DEL ESP32
+        // ============================================================
+        case 'porton/contador/valor':
+            console.log(`📊 Contador ESP32: ${data.ciclos} ciclos`);
+            if (data.ciclos !== undefined && data.ciclos > mantenimiento.ciclos.total) {
+                mantenimiento.ciclos.total = data.ciclos;
+                mantenimiento.guardarCiclos();
+                actualizarEstadisticas();
+                actualizarGraficos();
+                console.log(`✅ Sincronizado con ESP32: ${data.ciclos} ciclos totales`);
+            }
+            // Guardar también en el registro
+            registro.agregarEvento('CONTADOR', { ciclos: data.ciclos, timestamp: data.timestamp });
             break;
             
         default:
