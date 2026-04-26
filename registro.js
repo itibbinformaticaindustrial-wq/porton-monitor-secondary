@@ -97,8 +97,17 @@ class RegistroEventos {
             tendenciaSpan.style.color = tendencia >= 0 ? '#10b981' : '#ef4444';
         }
         
-        document.getElementById('totalCycles').textContent = mantenimiento.ciclos.total;
-        document.getElementById('todayCycles').textContent = mantenimiento.obtenerCiclosHoy();
+        // Actualizar ciclos totales y ciclos hoy
+        const totalCyclesSpan = document.getElementById('totalCycles');
+        const todayCyclesSpan = document.getElementById('todayCycles');
+        
+        if (totalCyclesSpan) {
+            totalCyclesSpan.textContent = mantenimiento.ciclos.total;
+        }
+        
+        if (todayCyclesSpan) {
+            todayCyclesSpan.textContent = mantenimiento.obtenerCiclosHoy();
+        }
     }
 
     actualizarTablaHistorial() {
@@ -108,7 +117,7 @@ class RegistroEventos {
         const filtrados = this.filtrarEventos();
         
         if (filtrados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4">No hay eventos registrados</td>' + '</tr>';
+            tbody.innerHTML = '<tr><td colspan="4">No hay eventos registrados<tr>' + '</td>';
             return;
         }
         
@@ -160,48 +169,25 @@ class RegistroEventos {
     formatearDetalles(datos) {
         const detalles = [];
         
-        // Estado del portón
         if (datos.estado) detalles.push(`🚪 ${datos.estado}`);
-        
-        // Modos y configuraciones
         if (datos.modoAuto !== undefined) detalles.push(`🤖 Auto: ${datos.modoAuto ? 'ON' : 'OFF'}`);
         if (datos.fotoHabilitado !== undefined) detalles.push(`📷 Foto: ${datos.fotoHabilitado ? 'ON' : 'OFF'}`);
         if (datos.botonFisicoHabilitado !== undefined) detalles.push(`🎮 Botón: ${datos.botonFisicoHabilitado ? 'ON' : 'OFF'}`);
         if (datos.pirHabilitado !== undefined) detalles.push(`🚪 PIR: ${datos.pirHabilitado ? 'ON' : 'OFF'}`);
         if (datos.modoHorario !== undefined) detalles.push(`⏰ Horario: ${datos.modoHorario ? 'ON' : 'OFF'}`);
         if (datos.horarioActivo !== undefined) detalles.push(`📅 Horario activo: ${datos.horarioActivo ? 'Sí' : 'No'}`);
-        
-        // Emergencias
         if (datos.emergenciaActiva) detalles.push('🛑 EMERGENCIA LOCAL');
         if (datos.emergenciaRemotaActiva) detalles.push('🌐 EMERGENCIA REMOTA');
-        
-        // Permiso especial
-        if (datos.permisoEspecial) {
-            const tiempo = datos.tiempoPermiso ? ` ${datos.tiempoPermiso}s` : '';
-            detalles.push(`🔑 PERMISO ESPECIAL${tiempo}`);
-        }
-        
-        // Motor y chapa
+        if (datos.permisoEspecial) detalles.push(`🔑 PERMISO ESPECIAL${datos.tiempoPermiso ? ` ${datos.tiempoPermiso}s` : ''}`);
         if (datos.motorActivo !== undefined) detalles.push(`⚙️ Motor: ${datos.motorActivo ? 'ACTIVO' : 'OFF'}`);
         if (datos.chapaActiva !== undefined) detalles.push(`🔐 Chapa: ${datos.chapaActiva ? 'ON' : 'OFF'}`);
         if (datos.movimientoSolicitado !== undefined) detalles.push(`🏃 Movimiento: ${datos.movimientoSolicitado ? 'Solicitado' : 'No'}`);
-        
-        // Sensores de final de carrera
         if (datos.abierto === true) detalles.push('🔓 Sensor ABIERTO');
         if (datos.cerrado === true) detalles.push('🔒 Sensor CERRADO');
-        
-        // Heartbeat
         if (datos.online !== undefined) detalles.push(datos.online ? '💚 ESP32 Online' : '🖤 ESP32 Offline');
+        if (datos.ciclos !== undefined) detalles.push(`📊 Contador ESP32: ${datos.ciclos} ciclos`);
         
-        // NUEVO: Contador del ESP32
-        if (datos.ciclos !== undefined) {
-            detalles.push(`📊 Contador ESP32: ${datos.ciclos} ciclos`);
-        }
-        
-        if (detalles.length === 0) {
-            return 'Sin detalles';
-        }
-        
+        if (detalles.length === 0) return 'Sin detalles';
         return detalles.join(' | ');
     }
 
@@ -262,7 +248,6 @@ class RegistroEventos {
 
 const registro = new RegistroEventos();
 
-// Funciones globales
 function exportToCSV() { registro.exportarCSV(); }
 function exportToJSON() { registro.exportarJSON(); }
 function clearEvents() { registro.limpiarDatos(); }
