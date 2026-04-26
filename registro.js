@@ -97,16 +97,20 @@ class RegistroEventos {
             tendenciaSpan.style.color = tendencia >= 0 ? '#10b981' : '#ef4444';
         }
         
-        // Actualizar ciclos totales y ciclos hoy
+        // Ciclos totales (acumulado histórico)
         const totalCyclesSpan = document.getElementById('totalCycles');
-        const todayCyclesSpan = document.getElementById('todayCycles');
-        
         if (totalCyclesSpan) {
             totalCyclesSpan.textContent = mantenimiento.ciclos.total;
         }
         
+        // Ciclos hoy (usando la variable GLOBAL de mqtt-client.js)
+        const todayCyclesSpan = document.getElementById('todayCycles');
         if (todayCyclesSpan) {
-            todayCyclesSpan.textContent = mantenimiento.obtenerCiclosHoy();
+            if (typeof globalCiclosHoy !== 'undefined' && globalCiclosHoy !== null) {
+                todayCyclesSpan.textContent = globalCiclosHoy;
+            } else {
+                todayCyclesSpan.textContent = mantenimiento.obtenerCiclosHoy();
+            }
         }
     }
 
@@ -117,7 +121,7 @@ class RegistroEventos {
         const filtrados = this.filtrarEventos();
         
         if (filtrados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4">No hay eventos registrados<tr>' + '</td>';
+            tbody.innerHTML = '<tr><td colspan="4">No hay eventos registrados</td>' + '</tr>';
             return;
         }
         
@@ -266,7 +270,11 @@ function resetFilters() {
 
 function actualizarEstadisticas() {
     document.getElementById('totalCycles').textContent = mantenimiento.ciclos.total;
-    document.getElementById('todayCycles').textContent = mantenimiento.obtenerCiclosHoy();
+    if (typeof globalCiclosHoy !== 'undefined' && globalCiclosHoy !== null) {
+        document.getElementById('todayCycles').textContent = globalCiclosHoy;
+    } else {
+        document.getElementById('todayCycles').textContent = mantenimiento.obtenerCiclosHoy();
+    }
     mantenimiento.actualizarPredicciones();
 }
 
