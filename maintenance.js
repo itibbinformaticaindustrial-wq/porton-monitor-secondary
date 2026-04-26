@@ -52,7 +52,7 @@ class SistemaMantenimiento {
     // ============================================================
     // MÉTODO PRINCIPAL: Procesar sensores con DETECCIÓN DE FLANCO
     // Ahora solo muestra los sensores, NO cuenta ciclos localmente
-    // El ESP32 es quien cuenta y envía el contador real
+    // El ESP32 es quien cuenta y envía el contador real por MQTT
     // ============================================================
     procesarSensores(sensores, timestamp) {
         const abiertoActual = sensores.abierto === true;
@@ -76,40 +76,68 @@ class SistemaMantenimiento {
         };
     }
 
-    // Esta función ya no se usa para contar, se conserva por si se necesita
-    completarCiclo(timestamp) {
-        this.ciclos.total++;
+    actualizarSaludSistema() {
+        const total = this.ciclos.total;
+        const porcentajeDesgaste = Math.min(100, (total / 5000) * 100);
+        const salud = Math.max(0, 100 - porcentajeDesgaste);
         
-        const datosCiclo = {
-            numero: this.ciclos.total,
-            timestamp: timestamp,
-            fecha: new Date(timestamp).toISOString().split('T')[0],
-            hora: new Date(timestamp).getHours(),
-            minuto: new Date(timestamp).getMinutes(),
-            segundo: new Date(timestamp).getSeconds()
-        };
+        const circulo = document.getElementById('healthCircle');
+        const porcentajeSpan = document.getElementById('healthPercent');
+        const eficienciaSpan = document.getElementById('efficiency');
+        const desgasteSpan = document.getElementById('wearLevel');
+        const ciclosVidaSpan = document.getElementById('lifeCycles');
+        const prediccionSpan = document.getElementById('failurePrediction');
         
-        this.ciclos.historial.push(datosCiclo);
-        this.guardarCiclos();
-        this.verificarAlertasMantenimiento();
-        this.actualizarPredicciones();
-        this.actualizarSaludSistema();
-        
-        console.log(`✅ CICLO #${this.ciclos.total} COMPLETADO a las ${new Date(timestamp).toLocaleTimeString()}`);
-        
-        if (typeof actualizarEstadisticas === 'function') {
-            actualizarEstadisticas();
-        }
-        if (typeof actualizarGraficos === 'function') {
-            actualizarGraficos();
+        if (circulo && porcentajeSpan) {
+            const circunferencia = 283;
+            const offset = circunferencia - (salud / 100) * circunferencia;
+            circulo.style.strokeDashoffset = offset;
+            porcentajeSpan.textContent = Math.round(salud);
+            
+            if (salud > 70) circulo.style.stroke = '#10b981';
+            else if (salud > 40) circulo.style.stroke = '#f59e0b';
+            else circulo.style.stroke = '#ef4444';
         }
         
-        if (typeof notificaciones !== 'undefined' && notificaciones.config.mantenimiento) {
-            notificaciones.enviarNotificacion(
-                'Ciclo Registrado',
-                `Ciclo #${this.ciclos.total} completado. Próximo mantenimiento en ${500 - (this.ciclos.total % 500)} ciclos.`,
-                'info'
-            );
+        if (eficienciaSpan) {
+            const eficiencia = Math.max(0, 100 - (total / 100));
+            eficienciaSpan.textContent = Math.round(eficiencia) + '%';
+        }
+        
+        if (desgasteSpan) {
+            desgasteSpan.textContent = Math.round(porcentajeDesgaste) + '%';
+        }
+        
+        if (ciclosVidaSpan) {
+            ciclosVidaSpan.textContent = `${total} / 5000`;
+        }
+        
+        if (prediccionSpan) {
+            if (total > 4500) prediccionSpan.textContent = 'Crítico - Reemplazo próximo';
+            else if (total > 4000) prediccionSpan.textContent = 'Alto desgaste';
+            else if (total > 3000) prediccionSpan.textContent = 'Desgaste moderado';
+            else if (total > 2000) prediccionSpan.textContent = 'Normal';
+            else prediccionSpan.textContent = 'Excelente';
+        }
+    }
+
+    actualizarPredicciones() {
+        const total = this.ciclos.total;
+        const siguiente500 = Math.ceil(total / 500) * 500;
+        const ciclosRestantes = siguiente500 - total;
+        
+        const proximoMantenimientoSpan = document.getElementById('nextMaintenance');
+        const ciclosRestantesSpan = document.getElementById('cyclesToNext');
+        
+        if (proximoMantenimientoSpan) {
+            if (siguiente500 === 500) proximoMantenimientoSpan.textContent = 'Revisión 500 ciclos';
+            else if (siguiente500 === 1000) proximoMantenimientoSpan.textContent = 'Lubricación';
+            else if (siguiente500 === 2000) proximoMantenimientoSpan.textContent = 'Revisión General';
+            else proximoMantenimientoSpan.textContent = `Revisión en ${siguiente500} ciclos`;
+        }
+        
+        if (ciclosRestantesSpan) {
+            ciclosRestantesSpan.textContent = `${ciclosRestantes} ciclos restantes`;
         }
     }
 
@@ -177,71 +205,6 @@ class SistemaMantenimiento {
             totalCiclos: this.ciclos.total
         });
         this.guardarHistorialMantenimiento();
-    }
-
-    actualizarSaludSistema() {
-        const total = this.ciclos.total;
-        const porcentajeDesgaste = Math.min(100, (total / 5000) * 100);
-        const salud = Math.max(0, 100 - porcentajeDesgaste);
-        
-        const circulo = document.getElementById('healthCircle');
-        const porcentajeSpan = document.getElementById('healthPercent');
-        const eficienciaSpan = document.getElementById('efficiency');
-        const desgasteSpan = document.getElementById('wearLevel');
-        const ciclosVidaSpan = document.getElementById('lifeCycles');
-        const prediccionSpan = document.getElementById('failurePrediction');
-        
-        if (circulo && porcentajeSpan) {
-            const circunferencia = 283;
-            const offset = circunferencia - (salud / 100) * circunferencia;
-            circulo.style.strokeDashoffset = offset;
-            porcentajeSpan.textContent = Math.round(salud);
-            
-            if (salud > 70) circulo.style.stroke = '#10b981';
-            else if (salud > 40) circulo.style.stroke = '#f59e0b';
-            else circulo.style.stroke = '#ef4444';
-        }
-        
-        if (eficienciaSpan) {
-            const eficiencia = Math.max(0, 100 - (total / 100));
-            eficienciaSpan.textContent = Math.round(eficiencia) + '%';
-        }
-        
-        if (desgasteSpan) {
-            desgasteSpan.textContent = Math.round(porcentajeDesgaste) + '%';
-        }
-        
-        if (ciclosVidaSpan) {
-            ciclosVidaSpan.textContent = `${total} / 5000`;
-        }
-        
-        if (prediccionSpan) {
-            if (total > 4500) prediccionSpan.textContent = 'Crítico - Reemplazo próximo';
-            else if (total > 4000) prediccionSpan.textContent = 'Alto desgaste';
-            else if (total > 3000) prediccionSpan.textContent = 'Desgaste moderado';
-            else if (total > 2000) prediccionSpan.textContent = 'Normal';
-            else prediccionSpan.textContent = 'Excelente';
-        }
-    }
-
-    actualizarPredicciones() {
-        const total = this.ciclos.total;
-        const siguiente500 = Math.ceil(total / 500) * 500;
-        const ciclosRestantes = siguiente500 - total;
-        
-        const proximoMantenimientoSpan = document.getElementById('nextMaintenance');
-        const ciclosRestantesSpan = document.getElementById('cyclesToNext');
-        
-        if (proximoMantenimientoSpan) {
-            if (siguiente500 === 500) proximoMantenimientoSpan.textContent = 'Revisión 500 ciclos';
-            else if (siguiente500 === 1000) proximoMantenimientoSpan.textContent = 'Lubricación';
-            else if (siguiente500 === 2000) proximoMantenimientoSpan.textContent = 'Revisión General';
-            else proximoMantenimientoSpan.textContent = `Revisión en ${siguiente500} ciclos`;
-        }
-        
-        if (ciclosRestantesSpan) {
-            ciclosRestantesSpan.textContent = `${ciclosRestantes} ciclos restantes`;
-        }
     }
 
     mostrarAlertas() {
@@ -388,29 +351,6 @@ class SistemaMantenimiento {
 }
 
 // ============================================================
-// FUNCIONES PARA SINCRONIZAR CON EL ESP32 (SERVIDOR HTTP)
-// ============================================================
-
-async function sincronizarConESP32() {
-    try {
-        const response = await fetch('http://192.168.1.200/contador');
-        const data = await response.json();
-        
-        if (data.ciclos !== undefined && data.ciclos > mantenimiento.ciclos.total) {
-            mantenimiento.ciclos.total = data.ciclos;
-            mantenimiento.guardarCiclos();
-            if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
-            if (typeof actualizarGraficos === 'function') actualizarGraficos();
-            console.log(`✅ Sincronizado con ESP32: ${data.ciclos} ciclos`);
-        } else if (data.ciclos !== undefined) {
-            console.log(`📊 ESP32 tiene ${data.ciclos} ciclos (local: ${mantenimiento.ciclos.total})`);
-        }
-    } catch (error) {
-        console.log('⚠️ No se pudo sincronizar con ESP32 (HTTP)');
-    }
-}
-
-// ============================================================
 // ALMACENAR CICLOS POR DÍA (para reportes)
 // ============================================================
 
@@ -451,12 +391,7 @@ function programarGuardadoDiario() {
     }, msHastaMedianoche);
 }
 
-// Iniciar sincronización y guardado al cargar
-setTimeout(() => {
-    sincronizarConESP32();
-    programarGuardadoDiario();
-}, 2000);
-
-setInterval(sincronizarConESP32, 30000);
+// Iniciar guardado diario al cargar (sin HTTP)
+programarGuardadoDiario();
 
 const mantenimiento = new SistemaMantenimiento();
