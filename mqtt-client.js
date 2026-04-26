@@ -31,12 +31,20 @@ let mqttClient;
 let lastHeartbeat = null;
 let ultimoCicloRecibido = 0;
 let totalAcumulado = 0;
+let contadorGuardadoEnSesion = null;
 
 // Cargar total acumulado al iniciar
 function cargarTotalAcumulado() {
     const guardado = localStorage.getItem('porton_total_acumulado');
     totalAcumulado = guardado ? parseInt(guardado) : 0;
     console.log(`📊 Total acumulado cargado: ${totalAcumulado} ciclos`);
+    
+    // Cargar el último contador recibido para evitar duplicados
+    const ultimoContador = localStorage.getItem('ultimo_contador_recibido');
+    if (ultimoContador !== null) {
+        ultimoCicloRecibido = parseInt(ultimoContador);
+        console.log(`🔄 Último contador recibido: ${ultimoCicloRecibido} ciclos`);
+    }
     
     if (typeof mantenimiento !== 'undefined') {
         mantenimiento.ciclos.total = totalAcumulado;
@@ -176,9 +184,10 @@ function handleMQTTMessage(topic, data) {
             const ciclosHoyRecibidos = data.ciclos;
             
             if (ciclosHoyRecibidos !== undefined) {
-                // Actualizar variable GLOBAL para que registro.js la vea
+                // Actualizar variable GLOBAL
                 globalCiclosHoy = ciclosHoyRecibidos;
                 
+                // Verificar si es un nuevo día
                 const ultimaFecha = localStorage.getItem('ultima_fecha_contador');
                 const fechaActual = hoy;
                 
@@ -194,11 +203,10 @@ function handleMQTTMessage(topic, data) {
                     ultimoCicloRecibido = 0;
                 }
                 
+                // Calcular NUEVOS ciclos (solo los que no habíamos contado)
                 let nuevosCiclos = 0;
-                if (ciclosHoyRecibidos >= ultimoCicloRecibido) {
+                if (ciclosHoyRecibidos > ultimoCicloRecibido) {
                     nuevosCiclos = ciclosHoyRecibidos - ultimoCicloRecibido;
-                } else {
-                    nuevosCiclos = ciclosHoyRecibidos;
                 }
                 
                 if (nuevosCiclos > 0) {
@@ -225,9 +233,13 @@ function handleMQTTMessage(topic, data) {
                             timestamp: data.timestamp 
                         });
                     }
+                } else {
+                    console.log(`📊 No hay ciclos nuevos (último: ${ultimoCicloRecibido}, actual: ${ciclosHoyRecibidos})`);
                 }
                 
+                // Actualizar el último contador recibido
                 ultimoCicloRecibido = ciclosHoyRecibidos;
+                localStorage.setItem('ultimo_contador_recibido', ultimoCicloRecibido.toString());
                 localStorage.setItem('ultima_fecha_contador', fechaActual);
                 
                 // Actualizar la UI directamente
