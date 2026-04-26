@@ -45,21 +45,23 @@ class RegistroEventos {
         }
         
         let icono = '📡';
-        if (evento.tipo === 'ESTADO') icono = '🚪';
-        else if (evento.tipo === 'SENSORES') icono = '📡';
-        else if (evento.tipo === 'HEARTBEAT') icono = '💓';
-        
-        // Obtener texto descriptivo según el tipo
         let descripcion = '';
+        
         if (evento.tipo === 'ESTADO') {
+            icono = '🚪';
             descripcion = evento.datos.estado || 'Cambio de estado';
         } else if (evento.tipo === 'SENSORES') {
+            icono = '📡';
             const sensores = [];
             if (evento.datos.abierto) sensores.push('ABIERTO');
             if (evento.datos.cerrado) sensores.push('CERRADO');
             descripcion = sensores.join(' | ') || 'Lectura de sensores';
         } else if (evento.tipo === 'HEARTBEAT') {
+            icono = '💓';
             descripcion = evento.datos.online ? 'ESP32 Online' : 'ESP32 Offline';
+        } else if (evento.tipo === 'CONTADOR') {
+            icono = '📊';
+            descripcion = `Contador ESP32: ${evento.datos.ciclos} ciclos`;
         }
         
         const elemento = document.createElement('div');
@@ -114,7 +116,7 @@ class RegistroEventos {
             <tr>
                 <td>${new Date(evento.timestamp).toLocaleString()}</td>
                 <td><strong>${evento.tipo}</strong></td>
-                <td>${evento.datos.estado || evento.datos.abierto || evento.datos.online || '-'}</td>
+                <td>${evento.datos.estado || evento.datos.abierto || evento.datos.online || evento.datos.ciclos || '-'}</td>
                 <td>${this.formatearDetalles(evento.datos)}</td>
             </tr>
         `).join('');
@@ -155,9 +157,6 @@ class RegistroEventos {
         return filtrados;
     }
 
-    // ============================================================
-    // FUNCIÓN FORMATEAR DETALLES - ACTUALIZADA CON TODOS LOS CAMPOS
-    // ============================================================
     formatearDetalles(datos) {
         const detalles = [];
         
@@ -194,7 +193,11 @@ class RegistroEventos {
         // Heartbeat
         if (datos.online !== undefined) detalles.push(datos.online ? '💚 ESP32 Online' : '🖤 ESP32 Offline');
         
-        // Si no hay detalles, mostrar mensaje por defecto
+        // NUEVO: Contador del ESP32
+        if (datos.ciclos !== undefined) {
+            detalles.push(`📊 Contador ESP32: ${datos.ciclos} ciclos`);
+        }
+        
         if (detalles.length === 0) {
             return 'Sin detalles';
         }
@@ -207,7 +210,7 @@ class RegistroEventos {
         const filas = this.eventos.map(evento => [
             evento.timestamp,
             evento.tipo,
-            evento.datos.estado || evento.datos.abierto || evento.datos.online || '',
+            evento.datos.estado || evento.datos.abierto || evento.datos.online || evento.datos.ciclos || '',
             this.formatearDetalles(evento.datos)
         ]);
         
