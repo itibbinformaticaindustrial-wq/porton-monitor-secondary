@@ -51,7 +51,8 @@ class SistemaMantenimiento {
 
     // ============================================================
     // MÉTODO PRINCIPAL: Procesar sensores con DETECCIÓN DE FLANCO
-    // Solo cuenta cuando cerrado pasa de false → true
+    // Ahora solo muestra los sensores, NO cuenta ciclos localmente
+    // El ESP32 es quien cuenta y envía el contador real
     // ============================================================
     procesarSensores(sensores, timestamp) {
         const abiertoActual = sensores.abierto === true;
@@ -60,46 +61,22 @@ class SistemaMantenimiento {
         const abiertoAnterior = this.estadoAnterior.abierto;
         const cerradoAnterior = this.estadoAnterior.cerrado;
         
-        // Detectar FLANCO DE SUBIDA en cerrado (false → true)
-        const flancoCerrado = (!cerradoAnterior && cerradoActual);
-        
-        if (flancoCerrado) {
-            console.log(`🔒 FLANCO DE CIERRE DETECTADO: cerrado cambió de ${cerradoAnterior} → ${cerradoActual}`);
-            
-            // Verificar que no sea un ciclo duplicado (mismo segundo)
-            const ahora = new Date(timestamp);
-            if (this.ultimoCicloRegistrado) {
-                const diffMs = ahora - this.ultimoCicloRegistrado;
-                if (diffMs < 1000) {
-                    console.log(`⚠️ Ciclo ignorado (mismo segundo, diferencia de ${diffMs}ms)`);
-                    this.actualizarEstadoAnterior(abiertoActual, cerradoActual);
-                    return;
-                }
-            }
-            
-            this.completarCiclo(timestamp);
-            this.ultimoCicloRegistrado = ahora;
-        } else {
-            // Solo mostrar log si hay cambio relevante
-            if (abiertoActual !== abiertoAnterior) {
-                console.log(`📡 Sensor ABIERTO: ${abiertoAnterior} → ${abiertoActual}`);
-            }
-            if (cerradoActual !== cerradoAnterior) {
-                console.log(`📡 Sensor CERRADO: ${cerradoAnterior} → ${cerradoActual}`);
-            }
+        // Solo mostrar cambios relevantes (no contar ciclos)
+        if (abiertoActual !== abiertoAnterior) {
+            console.log(`📡 Sensor ABIERTO: ${abiertoAnterior} → ${abiertoActual}`);
+        }
+        if (cerradoActual !== cerradoAnterior) {
+            console.log(`📡 Sensor CERRADO: ${cerradoAnterior} → ${cerradoActual}`);
         }
         
         // Actualizar estado anterior para la próxima comparación
-        this.actualizarEstadoAnterior(abiertoActual, cerradoActual);
-    }
-    
-    actualizarEstadoAnterior(abierto, cerrado) {
         this.estadoAnterior = {
-            abierto: abierto,
-            cerrado: cerrado
+            abierto: abiertoActual,
+            cerrado: cerradoActual
         };
     }
 
+    // Esta función ya no se usa para contar, se conserva por si se necesita
     completarCiclo(timestamp) {
         this.ciclos.total++;
         
@@ -120,7 +97,6 @@ class SistemaMantenimiento {
         
         console.log(`✅ CICLO #${this.ciclos.total} COMPLETADO a las ${new Date(timestamp).toLocaleTimeString()}`);
         
-        // Actualizar UI
         if (typeof actualizarEstadisticas === 'function') {
             actualizarEstadisticas();
         }
@@ -128,7 +104,6 @@ class SistemaMantenimiento {
             actualizarGraficos();
         }
         
-        // Mostrar notificación si está habilitada
         if (typeof notificaciones !== 'undefined' && notificaciones.config.mantenimiento) {
             notificaciones.enviarNotificacion(
                 'Ciclo Registrado',
@@ -411,5 +386,77 @@ class SistemaMantenimiento {
         return hoy - ciclosAyer;
     }
 }
+
+// ============================================================
+// FUNCIONES PARA SINCRONIZAR CON EL ESP32 (SERVIDOR HTTP)
+// ============================================================
+
+async function sincronizarConESP32() {
+    try {
+        const response = await fetch('http://192.168.1.200/contador');
+        const data = await response.json();
+        
+        if (data.ciclos !== undefined && data.ciclos > mantenimiento.ciclos.total) {
+            mantenimiento.ciclos.total = data.ciclos;
+            mantenimiento.guardarCiclos();
+            if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
+            if (typeof actualizarGraficos === 'function') actualizarGraficos();
+            console.log(`✅ Sincronizado con ESP32: ${data.ciclos} ciclos`);
+        } else if (data.ciclos !== undefined) {
+            console.log(`📊 ESP32 tiene ${data.ciclos} ciclos (local: ${mantenimiento.ciclos.total})`);
+        }
+    } catch (error) {
+        console.log('⚠️ No se pudo sincronizar con ESP32 (HTTP)');
+    }
+}
+
+// ============================================================
+// ALMACENAR CICLOS POR DÍA (para reportes)
+// ============================================================
+
+function guardarCicloDiario() {
+    const hoy = new Date().toISOString().split('T')[0];
+    const ciclosHoy = mantenimiento.ciclos.total;
+    
+    let historialDiario = JSON.parse(localStorage.getItem('historial_diario') || '[]');
+    
+    const index = historialDiario.findIndex(item => item.fecha === hoy);
+    
+    if (index !== -1) {
+        historialDiario[index].ciclos = ciclosHoy;
+        historialDiario[index].timestamp = new Date().toISOString();
+    } else {
+        historialDiario.push({
+            fecha: hoy,
+            ciclos: ciclosHoy,
+            timestamp: new Date().toISOString()
+        });
+    }
+    
+    if (historialDiario.length > 365) {
+        historialDiario = historialDiario.slice(-365);
+    }
+    
+    localStorage.setItem('historial_diario', JSON.stringify(historialDiario));
+    console.log(`💾 Ciclo diario guardado: ${hoy} → ${ciclosHoy} ciclos`);
+}
+
+function programarGuardadoDiario() {
+    const ahora = new Date();
+    const msHastaMedianoche = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + 1) - ahora;
+    
+    setTimeout(() => {
+        guardarCicloDiario();
+        setInterval(guardarCicloDiario, 24 * 60 * 60 * 1000);
+    }, msHastaMedianoche);
+}
+
+// Iniciar sincronización y guardado al cargar
+setTimeout(() => {
+    sincronizarConESP32();
+    programarGuardadoDiario();
+}, 2000);
+
+setInterval(sincronizarConESP32, 30000);
 
 const mantenimiento = new SistemaMantenimiento();
