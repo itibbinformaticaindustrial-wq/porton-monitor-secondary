@@ -26,7 +26,7 @@ const MQTT_CONFIG = {
 
 let mqttClient;
 let lastHeartbeat = null;
-let ultimoCicloRegistrado = 0; // Para evitar duplicados
+let ultimoCicloRegistrado = 0;
 
 function connectMQTT() {
     console.log('🔌 Conectando a MQTT broker:', MQTT_CONFIG.broker);
@@ -92,23 +92,14 @@ function handleMQTTMessage(topic, data) {
     
     switch(topic) {
         case 'porton/estado':
-            // ============================================
-            // 1. ACTUALIZAR ESTADO ACTUAL EN LA UI
-            // ============================================
             const stateSpan = document.getElementById('currentState');
             if (stateSpan && data.estado) {
                 stateSpan.textContent = data.estado;
                 console.log(`🚪 Estado actualizado: ${data.estado}`);
             }
-            
-            // Registrar evento
             registro.agregarEvento('ESTADO', data);
-            
-            // Actualizar gráficos y estadísticas
             actualizarEstadisticas();
             actualizarGraficos();
-            
-            // Notificación si está habilitada
             if (typeof notificaciones !== 'undefined') {
                 notificaciones.alertaEstado(data.estado);
             }
@@ -125,23 +116,14 @@ function handleMQTTMessage(topic, data) {
             break;
             
         case 'porton/contador/valor':
-            // ============================================
-            // 2. ACTUALIZAR CONTADOR DE CICLOS
-            // ============================================
             const ciclosRecibidos = data.ciclos;
             
             if (ciclosRecibidos !== undefined && ciclosRecibidos > ultimoCicloRegistrado) {
-                // Actualizar ciclos totales
                 mantenimiento.ciclos.total = ciclosRecibidos;
                 
-                // ============================================
-                // 3. ACTUALIZAR HISTORIAL PARA "CICLOS HOY"
-                // ============================================
-                // Buscar si ya hay un registro para hoy
                 const indexHoy = mantenimiento.ciclos.historial.findIndex(c => c.fecha === hoy);
                 
                 if (indexHoy !== -1) {
-                    // Actualizar el registro de hoy con el último valor
                     mantenimiento.ciclos.historial[indexHoy] = {
                         numero: ciclosRecibidos,
                         timestamp: timestamp,
@@ -151,7 +133,6 @@ function handleMQTTMessage(topic, data) {
                         segundo: ahora.getSeconds()
                     };
                 } else {
-                    // Crear nuevo registro para hoy
                     mantenimiento.ciclos.historial.unshift({
                         numero: ciclosRecibidos,
                         timestamp: timestamp,
@@ -162,24 +143,14 @@ function handleMQTTMessage(topic, data) {
                     });
                 }
                 
-                // Mantener solo los últimos 365 días (para gráficos)
                 if (mantenimiento.ciclos.historial.length > 365) {
                     mantenimiento.ciclos.historial = mantenimiento.ciclos.historial.slice(0, 365);
                 }
                 
-                // Guardar cambios
                 mantenimiento.guardarCiclos();
-                
-                // Actualizar UI
                 actualizarEstadisticas();
                 actualizarGraficos();
-                
-                // Registrar evento
-                registro.agregarEvento('CONTADOR', { 
-                    ciclos: ciclosRecibidos, 
-                    ciclosHoy: mantenimiento.obtenerCiclosHoy(),
-                    timestamp: data.timestamp 
-                });
+                registro.agregarEvento('CONTADOR', { ciclos: ciclosRecibidos, timestamp: data.timestamp });
                 
                 console.log(`✅ CICLOS TOTALES: ${ciclosRecibidos}`);
                 console.log(`📅 CICLOS HOY: ${mantenimiento.obtenerCiclosHoy()}`);
