@@ -1,6 +1,6 @@
-// =============================================================================================
-// CONFIGURACIÓN MQTT - CON SINCRONIZACIÓN GLOBAL VÍA NODE-RED Y CON SINCRONIZACIÓN CON SUPABASE
-// =============================================================================================
+// ============================================================
+// CONFIGURACIÓN MQTT - CON SINCRONIZACIÓN CON SUPABASE
+// ============================================================
 
 let globalCiclosHoy = 0;
 let globalTotalAcumulado = 0;
@@ -44,26 +44,28 @@ async function leerTotalDesdeSupabase() {
         });
         
         const data = await response.json();
-        const total = data[0]?.total_ciclos || 0;
+        // Obtener el último registro (el de mayor id)
+        const ultimoRegistro = data[data.length - 1];
+        const total = ultimoRegistro?.total_ciclos || 0;
         
-        console.log('📊 Total en Supabase:', total);
+        console.log('📊 Total en Supabase (último registro):', total);
         
-        // Actualizar la página web
+        // Actualizar variable global
+        globalTotalAcumulado = total;
+        
+        // Actualizar mantenimiento
         if (typeof mantenimiento !== 'undefined') {
-            if (total > mantenimiento.ciclos.total) {
-                mantenimiento.ciclos.total = total;
-                mantenimiento.guardarCiclos();
-                if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
-                if (typeof actualizarGraficos === 'function') actualizarGraficos();
-                console.log(`🌍 Sincronizado: ${total} ciclos totales`);
-            }
+            mantenimiento.ciclos.total = total;
+            mantenimiento.guardarCiclos();
+            if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
+            if (typeof actualizarGraficos === 'function') actualizarGraficos();
         }
         
         // Actualizar el span directamente
         const totalSpan = document.getElementById('totalCycles');
         if (totalSpan) totalSpan.textContent = total;
         
-        globalTotalAcumulado = total;
+        console.log(`🌍 Sincronizado con Supabase: ${total} ciclos totales`);
         
     } catch (error) {
         console.log('⚠️ Error leyendo desde Supabase:', error);
@@ -299,6 +301,7 @@ function handleMQTTMessage(topic, data) {
 document.addEventListener('DOMContentLoaded', () => {
     cargarDatosLocales();
     connectMQTT();
+    // Leer desde Supabase al iniciar y cada 10 segundos
     leerTotalDesdeSupabase();
     setInterval(leerTotalDesdeSupabase, 10000);
 });
