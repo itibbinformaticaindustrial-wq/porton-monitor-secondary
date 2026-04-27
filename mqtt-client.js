@@ -1,13 +1,9 @@
-// ============================================================
-// CONFIGURACIÓN MQTT - CON SINCRONIZACIÓN GLOBAL VÍA NODE-RED
-// ============================================================
+// =============================================================================================
+// CONFIGURACIÓN MQTT - CON SINCRONIZACIÓN GLOBAL VÍA NODE-RED Y CON SINCRONIZACIÓN CON SUPABASE
+// =============================================================================================
 
 let globalCiclosHoy = 0;
 let globalTotalAcumulado = 0;
-let sincronizacionCompletada = false;
-
-// URL de Node-RED (contador global)
-const NODE_RED_URL = 'https://redesigned-xylophone-7799w6wxpqj63r4g7-1880.app.github.dev';
 
 const MQTT_CONFIG = {
     broker: 'wss://d21941469193416fabcba46336fd0980.s1.eu.hivemq.cloud:8884/mqtt',
@@ -33,63 +29,44 @@ let lastHeartbeat = null;
 let ultimoCicloGuardado = 0;
 
 // ============================================================
-// SINCRONIZAR CON NODE-RED (CONTADOR GLOBAL)
+// SUPABASE - LECTURA DEL TOTAL GLOBAL
 // ============================================================
-async function sincronizarConNodeRED() {
-    try {
-        console.log('🔄 Sincronizando con Node-RED...');
-        const response = await fetch(`${NODE_RED_URL}/api/ciclos`);
-        const data = await response.json();
-        
-        if (data.success && data.totalCiclos !== undefined) {
-            globalTotalAcumulado = data.totalCiclos;
-            
-            if (typeof mantenimiento !== 'undefined') {
-                mantenimiento.ciclos.total = globalTotalAcumulado;
-                mantenimiento.guardarCiclos();
-            }
-            
-            // Forzar actualización de la UI inmediatamente
-            const totalCyclesSpan = document.getElementById('totalCycles');
-            if (totalCyclesSpan) {
-                totalCyclesSpan.textContent = globalTotalAcumulado;
-            }
-            
-            if (typeof actualizarEstadisticas === 'function') {
-                actualizarEstadisticas();
-            }
-            
-            sincronizacionCompletada = true;
-            console.log(`🌍 Sincronizado con Node-RED: ${globalTotalAcumulado} ciclos totales`);
-            return true;
-        }
-    } catch (error) {
-        console.log('⚠️ No se pudo sincronizar con Node-RED', error);
-        return false;
-    }
-}
+const SUPABASE_URL = 'https://zdwonipaqrixxgfhxjjt.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_hAfw0kf-IxPbIzd9y3nThw_nwoDZf-P';
 
-// ============================================================
-// ESPERAR LA SINCRONIZACIÓN INICIAL
-// ============================================================
-async function esperarSincronizacionInicial() {
-    console.log('⏳ Esperando sincronización inicial con Node-RED...');
-    let intentos = 0;
-    const maxIntentos = 10;
-    
-    while (!sincronizacionCompletada && intentos < maxIntentos) {
-        await sincronizarConNodeRED();
-        if (!sincronizacionCompletada) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            intentos++;
+async function leerTotalDesdeSupabase() {
+    try {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/ciclos?select=total_ciclos`, {
+            headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`
+            }
+        });
+        
+        const data = await response.json();
+        const total = data[0]?.total_ciclos || 0;
+        
+        console.log('📊 Total en Supabase:', total);
+        
+        // Actualizar la página web
+        if (typeof mantenimiento !== 'undefined') {
+            if (total > mantenimiento.ciclos.total) {
+                mantenimiento.ciclos.total = total;
+                mantenimiento.guardarCiclos();
+                if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
+                if (typeof actualizarGraficos === 'function') actualizarGraficos();
+                console.log(`🌍 Sincronizado: ${total} ciclos totales`);
+            }
         }
-    }
-    
-    if (sincronizacionCompletada) {
-        console.log('✅ Sincronización inicial completada');
-    } else {
-        console.log('⚠️ No se pudo sincronizar inicialmente, usando valores locales');
-        cargarDatosLocales();
+        
+        // Actualizar el span directamente
+        const totalSpan = document.getElementById('totalCycles');
+        if (totalSpan) totalSpan.textContent = total;
+        
+        globalTotalAcumulado = total;
+        
+    } catch (error) {
+        console.log('⚠️ Error leyendo desde Supabase:', error);
     }
 }
 
@@ -124,12 +101,8 @@ function guardarTotalAcumulado() {
     localStorage.setItem('porton_total_acumulado', globalTotalAcumulado.toString());
 }
 
-// ============================================================
-// DETECTAR CAMBIO DE DÍA
-// ============================================================
 function detectarCambioDeDia(fechaActual) {
     const ultimaFecha = localStorage.getItem('ultima_fecha_contador');
-    
     if (ultimaFecha && ultimaFecha !== fechaActual) {
         console.log(`🔄 Cambio de día detectado: ${ultimaFecha} → ${fechaActual}`);
         ultimoCicloGuardado = 0;
@@ -189,6 +162,15 @@ function connectMQTT() {
     
     mqttClient.on('message', (topic, message) => {
         try {
+            // Manejar heartbeat que viene como texto plano
+            if (topic === 'porton/heartbeat') {
+                const online = message.toString() === 'online';
+                if (typeof registro !== 'undefined') {
+                    registro.agregarEvento('HEARTBEAT', { online: online });
+                }
+                return;
+            }
+            
             const payload = JSON.parse(message.toString());
             console.log(`📨 Mensaje recibido [${topic}]:`, payload);
             handleMQTTMessage(topic, payload);
@@ -247,10 +229,7 @@ function handleMQTTMessage(topic, data) {
             break;
             
         case 'porton/heartbeat':
-            lastHeartbeat = data.online;
-            if (typeof registro !== 'undefined') {
-                registro.agregarEvento('HEARTBEAT', { online: data.online });
-            }
+            // Ya manejado arriba
             break;
             
         case 'porton/contador/valor':
@@ -272,8 +251,8 @@ function handleMQTTMessage(topic, data) {
                     guardarTotalAcumulado();
                     
                     console.log(`📊 +${diferencia} ciclos nuevos`);
-                    console.log(`🌍 Total acumulado: ${globalTotalAcumulado} ciclos`);
-                    console.log(`📅 Ciclos hoy (ESP32): ${ciclosHoyRecibidos}`);
+                    console.log(`📈 Total acumulado: ${globalTotalAcumulado} ciclos`);
+                    console.log(`📅 Ciclos hoy: ${ciclosHoyRecibidos}`);
                     
                     if (typeof mantenimiento !== 'undefined') {
                         mantenimiento.ciclos.total = globalTotalAcumulado;
@@ -314,11 +293,12 @@ function handleMQTTMessage(topic, data) {
     }
 }
 
-// Sincronizar con Node-RED cada 30 segundos
-setInterval(sincronizarConNodeRED, 30000);
-
+// ============================================================
+// INICIALIZACIÓN
+// ============================================================
 document.addEventListener('DOMContentLoaded', () => {
-    esperarSincronizacionInicial().then(() => {
-        connectMQTT();
-    });
+    cargarDatosLocales();
+    connectMQTT();
+    leerTotalDesdeSupabase();
+    setInterval(leerTotalDesdeSupabase, 10000);
 });
