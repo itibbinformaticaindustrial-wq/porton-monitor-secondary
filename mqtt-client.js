@@ -1,13 +1,10 @@
 // ============================================================
-// CONFIGURACIÓN MQTT - NUEVAS CREDENCIALES
-// Broker: d21941469193416fabcba46336fd0980.s1.eu.hivemq.cloud
-// Usuario: porton_itibb
-// Contraseña: Porton2026
+// CONFIGURACIÓN MQTT - CON SINCRONIZACIÓN GLOBAL VÍA NODE-RED
 // ============================================================
 
-// Variable GLOBAL para que registro.js pueda acceder a los ciclos del día
 let globalCiclosHoy = 0;
 let globalTotalAcumulado = 0;
+let sincronizacionCompletada = false;
 
 // URL de Node-RED (contador global)
 const NODE_RED_URL = 'https://redesigned-xylophone-7799w6wxpqj63r4g7-1880.app.github.dev';
@@ -34,13 +31,13 @@ const MQTT_CONFIG = {
 let mqttClient;
 let lastHeartbeat = null;
 let ultimoCicloGuardado = 0;
-let totalAcumulado = 0;
 
 // ============================================================
 // SINCRONIZAR CON NODE-RED (CONTADOR GLOBAL)
 // ============================================================
 async function sincronizarConNodeRED() {
     try {
+        console.log('🔄 Sincronizando con Node-RED...');
         const response = await fetch(`${NODE_RED_URL}/api/ciclos`);
         const data = await response.json();
         
@@ -52,17 +49,47 @@ async function sincronizarConNodeRED() {
                 mantenimiento.guardarCiclos();
             }
             
+            // Forzar actualización de la UI inmediatamente
+            const totalCyclesSpan = document.getElementById('totalCycles');
+            if (totalCyclesSpan) {
+                totalCyclesSpan.textContent = globalTotalAcumulado;
+            }
+            
+            if (typeof actualizarEstadisticas === 'function') {
+                actualizarEstadisticas();
+            }
+            
+            sincronizacionCompletada = true;
             console.log(`🌍 Sincronizado con Node-RED: ${globalTotalAcumulado} ciclos totales`);
-            
-            // Actualizar UI
-            if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
-            if (typeof actualizarGraficos === 'function') actualizarGraficos();
-            
             return true;
         }
     } catch (error) {
-        console.log('⚠️ No se pudo sincronizar con Node-RED');
+        console.log('⚠️ No se pudo sincronizar con Node-RED', error);
         return false;
+    }
+}
+
+// ============================================================
+// ESPERAR LA SINCRONIZACIÓN INICIAL
+// ============================================================
+async function esperarSincronizacionInicial() {
+    console.log('⏳ Esperando sincronización inicial con Node-RED...');
+    let intentos = 0;
+    const maxIntentos = 10;
+    
+    while (!sincronizacionCompletada && intentos < maxIntentos) {
+        await sincronizarConNodeRED();
+        if (!sincronizacionCompletada) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            intentos++;
+        }
+    }
+    
+    if (sincronizacionCompletada) {
+        console.log('✅ Sincronización inicial completada');
+    } else {
+        console.log('⚠️ No se pudo sincronizar inicialmente, usando valores locales');
+        cargarDatosLocales();
     }
 }
 
@@ -78,6 +105,11 @@ function cargarDatosLocales() {
             mantenimiento.guardarCiclos();
         }
         console.log(`📀 Total acumulado local: ${globalTotalAcumulado} ciclos (respaldo)`);
+        
+        const totalCyclesSpan = document.getElementById('totalCycles');
+        if (totalCyclesSpan) {
+            totalCyclesSpan.textContent = globalTotalAcumulado;
+        }
     }
     
     const guardadoUltimoCiclo = localStorage.getItem('ultimo_ciclo_esp32');
@@ -128,16 +160,10 @@ function guardarCicloDiario(fecha, ciclos) {
     }
     
     localStorage.setItem('historial_diario', JSON.stringify(historialDiario));
-    console.log(`📅 Guardado ciclo diario: ${fecha} → ${ciclos} ciclos`);
 }
 
 function connectMQTT() {
     console.log('🔌 Conectando a MQTT broker...');
-    
-    // Primero sincronizar con Node-RED
-    sincronizarConNodeRED().then(() => {
-        cargarDatosLocales();
-    });
     
     mqttClient = mqtt.connect(MQTT_CONFIG.broker, MQTT_CONFIG.options);
     
@@ -245,9 +271,6 @@ function handleMQTTMessage(topic, data) {
                     globalTotalAcumulado += diferencia;
                     guardarTotalAcumulado();
                     
-                    // Sincronizar con Node-RED
-                    sincronizarConNodeRED();
-                    
                     console.log(`📊 +${diferencia} ciclos nuevos`);
                     console.log(`🌍 Total acumulado: ${globalTotalAcumulado} ciclos`);
                     console.log(`📅 Ciclos hoy (ESP32): ${ciclosHoyRecibidos}`);
@@ -295,5 +318,7 @@ function handleMQTTMessage(topic, data) {
 setInterval(sincronizarConNodeRED, 30000);
 
 document.addEventListener('DOMContentLoaded', () => {
-    connectMQTT();
+    esperarSincronizacionInicial().then(() => {
+        connectMQTT();
+    });
 });
