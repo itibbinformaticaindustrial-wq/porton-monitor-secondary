@@ -7,6 +7,10 @@
 
 // Variable GLOBAL para que registro.js pueda acceder a los ciclos del día
 let globalCiclosHoy = 0;
+let globalTotalAcumulado = 0;
+
+// URL de Node-RED (contador global)
+const NODE_RED_URL = 'https://redesigned-xylophone-7799w6wxpqj63r4g7-1880.app.github.dev';
 
 const MQTT_CONFIG = {
     broker: 'wss://d21941469193416fabcba46336fd0980.s1.eu.hivemq.cloud:8884/mqtt',
@@ -33,43 +37,75 @@ let ultimoCicloGuardado = 0;
 let totalAcumulado = 0;
 
 // ============================================================
-// CARGAR DATOS GUARDADOS AL INICIAR
+// SINCRONIZAR CON NODE-RED (CONTADOR GLOBAL)
 // ============================================================
-function cargarDatosPersistentes() {
-    // Cargar total acumulado
-    const guardadoTotal = localStorage.getItem('porton_total_acumulado');
-    totalAcumulado = guardadoTotal ? parseInt(guardadoTotal) : 0;
-    
-    // Cargar el último ciclo guardado (del ESP32)
-    const guardadoUltimoCiclo = localStorage.getItem('ultimo_ciclo_esp32');
-    ultimoCicloGuardado = guardadoUltimoCiclo ? parseInt(guardadoUltimoCiclo) : 0;
-    
-    console.log(`📊 Total acumulado cargado: ${totalAcumulado} ciclos`);
-    console.log(`🔄 Último ciclo ESP32 guardado: ${ultimoCicloGuardado} ciclos`);
-    
-    if (typeof mantenimiento !== 'undefined') {
-        mantenimiento.ciclos.total = totalAcumulado;
-        mantenimiento.guardarCiclos();
-        if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
+async function sincronizarConNodeRED() {
+    try {
+        const response = await fetch(`${NODE_RED_URL}/api/ciclos`);
+        const data = await response.json();
+        
+        if (data.success && data.totalCiclos !== undefined) {
+            globalTotalAcumulado = data.totalCiclos;
+            
+            if (typeof mantenimiento !== 'undefined') {
+                mantenimiento.ciclos.total = globalTotalAcumulado;
+                mantenimiento.guardarCiclos();
+            }
+            
+            console.log(`🌍 Sincronizado con Node-RED: ${globalTotalAcumulado} ciclos totales`);
+            
+            // Actualizar UI
+            if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
+            if (typeof actualizarGraficos === 'function') actualizarGraficos();
+            
+            return true;
+        }
+    } catch (error) {
+        console.log('⚠️ No se pudo sincronizar con Node-RED');
+        return false;
     }
 }
 
 // ============================================================
-// GUARDAR DATOS PERSISTENTES
+// CARGAR DATOS GUARDADOS LOCALMENTE (respaldo)
 // ============================================================
-function guardarTotalAcumulado() {
-    localStorage.setItem('porton_total_acumulado', totalAcumulado.toString());
-    console.log(`💾 Total acumulado guardado: ${totalAcumulado} ciclos`);
+function cargarDatosLocales() {
+    const guardadoTotal = localStorage.getItem('porton_total_acumulado');
+    if (guardadoTotal && globalTotalAcumulado === 0) {
+        globalTotalAcumulado = parseInt(guardadoTotal);
+        if (typeof mantenimiento !== 'undefined') {
+            mantenimiento.ciclos.total = globalTotalAcumulado;
+            mantenimiento.guardarCiclos();
+        }
+        console.log(`📀 Total acumulado local: ${globalTotalAcumulado} ciclos (respaldo)`);
+    }
+    
+    const guardadoUltimoCiclo = localStorage.getItem('ultimo_ciclo_esp32');
+    ultimoCicloGuardado = guardadoUltimoCiclo ? parseInt(guardadoUltimoCiclo) : 0;
 }
 
 function guardarUltimoCicloESP32(ciclos) {
     localStorage.setItem('ultimo_ciclo_esp32', ciclos.toString());
-    console.log(`💾 Último ciclo ESP32 guardado: ${ciclos} ciclos`);
+}
+
+function guardarTotalAcumulado() {
+    localStorage.setItem('porton_total_acumulado', globalTotalAcumulado.toString());
 }
 
 // ============================================================
-// GUARDAR CICLO DIARIO PARA REPORTES
+// DETECTAR CAMBIO DE DÍA
 // ============================================================
+function detectarCambioDeDia(fechaActual) {
+    const ultimaFecha = localStorage.getItem('ultima_fecha_contador');
+    
+    if (ultimaFecha && ultimaFecha !== fechaActual) {
+        console.log(`🔄 Cambio de día detectado: ${ultimaFecha} → ${fechaActual}`);
+        ultimoCicloGuardado = 0;
+        return true;
+    }
+    return false;
+}
+
 function guardarCicloDiario(fecha, ciclos) {
     let historialDiario = JSON.parse(localStorage.getItem('historial_diario') || '[]');
     const index = historialDiario.findIndex(item => item.fecha === fecha);
@@ -95,33 +131,13 @@ function guardarCicloDiario(fecha, ciclos) {
     console.log(`📅 Guardado ciclo diario: ${fecha} → ${ciclos} ciclos`);
 }
 
-// ============================================================
-// DETECTAR CAMBIO DE DÍA
-// ============================================================
-function detectarCambioDeDia(fechaActual) {
-    const ultimaFecha = localStorage.getItem('ultima_fecha_contador');
-    
-    if (ultimaFecha && ultimaFecha !== fechaActual) {
-        console.log(`🔄 Cambio de día detectado: ${ultimaFecha} → ${fechaActual}`);
-        
-        // Guardar los ciclos del día anterior
-        if (ultimoCicloGuardado > 0) {
-            guardarCicloDiario(ultimaFecha, ultimoCicloGuardado);
-            console.log(`📅 Ciclos del día ${ultimaFecha}: ${ultimoCicloGuardado}`);
-        }
-        
-        // Reiniciar el contador de referencia para el nuevo día
-        ultimoCicloGuardado = 0;
-        return true;
-    }
-    
-    return false;
-}
-
 function connectMQTT() {
-    console.log('🔌 Conectando a MQTT broker:', MQTT_CONFIG.broker);
+    console.log('🔌 Conectando a MQTT broker...');
     
-    cargarDatosPersistentes();
+    // Primero sincronizar con Node-RED
+    sincronizarConNodeRED().then(() => {
+        cargarDatosLocales();
+    });
     
     mqttClient = mqtt.connect(MQTT_CONFIG.broker, MQTT_CONFIG.options);
     
@@ -202,9 +218,6 @@ function handleMQTTMessage(topic, data) {
             if (typeof registro !== 'undefined') {
                 registro.agregarEvento('SENSORES', data);
             }
-            if (typeof mantenimiento !== 'undefined') {
-                mantenimiento.procesarSensores(data, timestamp);
-            }
             break;
             
         case 'porton/heartbeat':
@@ -218,37 +231,29 @@ function handleMQTTMessage(topic, data) {
             const ciclosHoyRecibidos = data.ciclos;
             
             if (ciclosHoyRecibidos !== undefined) {
-                // Actualizar variable GLOBAL
                 globalCiclosHoy = ciclosHoyRecibidos;
-                
-                // Detectar cambio de día
                 detectarCambioDeDia(hoy);
                 
-                // ============================================================
-                // LÓGICA PRINCIPAL: diferencia entre el ciclo actual y el último guardado
-                // ============================================================
                 let diferencia = 0;
-                
                 if (ciclosHoyRecibidos >= ultimoCicloGuardado) {
-                    // Caso normal: el contador subió o se quedó igual
                     diferencia = ciclosHoyRecibidos - ultimoCicloGuardado;
                 } else {
-                    // Caso: el ESP32 se reinició (contador menor al anterior)
-                    // Esto también puede indicar cambio de día (ya detectado arriba)
                     diferencia = ciclosHoyRecibidos;
                 }
                 
                 if (diferencia > 0) {
-                    // Sumar la diferencia al total acumulado
-                    totalAcumulado += diferencia;
+                    globalTotalAcumulado += diferencia;
                     guardarTotalAcumulado();
                     
-                    console.log(`📊 +${diferencia} ciclos nuevos (${ultimoCicloGuardado} → ${ciclosHoyRecibidos})`);
-                    console.log(`📈 Total acumulado: ${totalAcumulado} ciclos`);
+                    // Sincronizar con Node-RED
+                    sincronizarConNodeRED();
+                    
+                    console.log(`📊 +${diferencia} ciclos nuevos`);
+                    console.log(`🌍 Total acumulado: ${globalTotalAcumulado} ciclos`);
                     console.log(`📅 Ciclos hoy (ESP32): ${ciclosHoyRecibidos}`);
                     
                     if (typeof mantenimiento !== 'undefined') {
-                        mantenimiento.ciclos.total = totalAcumulado;
+                        mantenimiento.ciclos.total = globalTotalAcumulado;
                         mantenimiento.guardarCiclos();
                     }
                     
@@ -258,21 +263,17 @@ function handleMQTTMessage(topic, data) {
                     if (typeof registro !== 'undefined') {
                         registro.agregarEvento('CONTADOR', { 
                             ciclosHoy: ciclosHoyRecibidos,
-                            totalAcumulado: totalAcumulado,
+                            totalAcumulado: globalTotalAcumulado,
                             nuevos: diferencia,
                             timestamp: data.timestamp 
                         });
                     }
-                } else {
-                    console.log(`📊 Sin cambios (último: ${ultimoCicloGuardado}, actual: ${ciclosHoyRecibidos})`);
                 }
                 
-                // Guardar el nuevo valor para futuras comparaciones
                 ultimoCicloGuardado = ciclosHoyRecibidos;
                 guardarUltimoCicloESP32(ultimoCicloGuardado);
                 localStorage.setItem('ultima_fecha_contador', hoy);
                 
-                // Actualizar la UI directamente
                 const todayCyclesSpan = document.getElementById('todayCycles');
                 if (todayCyclesSpan) {
                     todayCyclesSpan.textContent = ciclosHoyRecibidos;
@@ -280,7 +281,7 @@ function handleMQTTMessage(topic, data) {
                 
                 const totalCyclesSpan = document.getElementById('totalCycles');
                 if (totalCyclesSpan) {
-                    totalCyclesSpan.textContent = totalAcumulado;
+                    totalCyclesSpan.textContent = globalTotalAcumulado;
                 }
             }
             break;
@@ -289,6 +290,9 @@ function handleMQTTMessage(topic, data) {
             console.log(`Topic no manejado: ${topic}`, data);
     }
 }
+
+// Sincronizar con Node-RED cada 30 segundos
+setInterval(sincronizarConNodeRED, 30000);
 
 document.addEventListener('DOMContentLoaded', () => {
     connectMQTT();
