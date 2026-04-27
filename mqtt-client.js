@@ -205,34 +205,35 @@ function handleMQTTMessage(topic, data) {
     switch(topic) {
         case 'porton/estado':
             // ============================================
-            // ACTUALIZAR EL ESTADO ACTUAL EN LA TARJETA ⚡
+            // ACTUALIZAR EL ESTADO ACTUAL
             // ============================================
-            console.log('🔥 ESTADO RECIBIDO:', data);
-            console.log('Valor de estado:', data.estado);
+            console.log('🚪 ESTADO RECIBIDO:', data.estado);
             
             const stateSpan = document.getElementById('currentState');
-            console.log('Elemento currentState:', stateSpan);
-            
-            if (stateSpan && data.estado) {
-                stateSpan.textContent = data.estado;
+            if (stateSpan) {
+                // Mostrar el estado con formato bonito
+                if (data.estado === 'ABIERTO') {
+                    stateSpan.innerHTML = '✅ ABIERTO';
+                } else if (data.estado === 'CERRADO') {
+                    stateSpan.innerHTML = '🔒 CERRADO';
+                } else {
+                    stateSpan.innerHTML = '⚠️ ' + data.estado;
+                }
                 console.log(`✅ Estado actualizado a: ${data.estado}`);
-            } else {
-                console.log('❌ No se pudo actualizar el estado');
             }
             
             // Actualizar la última actualización
             const lastUpdateSpan = document.getElementById('lastUpdate');
             if (lastUpdateSpan) {
-                lastUpdateSpan.textContent = `Último: hace 0s`;
+                lastUpdateSpan.textContent = `Último: ahora`;
             }
             
+            // Registrar evento
             if (typeof registro !== 'undefined') {
                 registro.agregarEvento('ESTADO', data);
             }
             
-            if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
-            if (typeof actualizarGraficos === 'function') actualizarGraficos();
-            
+            // Notificación
             if (typeof notificaciones !== 'undefined') {
                 notificaciones.alertaEstado(data.estado);
             }
@@ -242,6 +243,10 @@ function handleMQTTMessage(topic, data) {
             if (typeof registro !== 'undefined') {
                 registro.agregarEvento('SENSORES', data);
             }
+            break;
+            
+        case 'porton/heartbeat':
+            // Ya manejado arriba
             break;
             
         case 'porton/contador/valor':
@@ -303,6 +308,10 @@ function handleMQTTMessage(topic, data) {
         default:
             console.log(`Topic no manejado: ${topic}`, data);
     }
+    
+    // Actualizar gráficos y estadísticas generales
+    if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
+    if (typeof actualizarGraficos === 'function') actualizarGraficos();
 }
 
 // ============================================================
