@@ -3,7 +3,6 @@
 // ============================================================
 
 let globalCiclosHoy = 0;
-let globalTotalAcumulado = 0;
 
 const MQTT_CONFIG = {
     broker: 'wss://d21941469193416fabcba46336fd0980.s1.eu.hivemq.cloud:8884/mqtt',
@@ -26,17 +25,17 @@ const MQTT_CONFIG = {
 
 let mqttClient;
 let lastHeartbeat = null;
-let ultimoCicloGuardado = 0;
 
 // ============================================================
-// SUPABASE - LECTURA DEL TOTAL GLOBAL
+// SUPABASE - LECTURA DEL TOTAL GLOBAL (usando ID)
 // ============================================================
 const SUPABASE_URL = 'https://zdwonipaqrixxgfhxjjt.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_hAfw0kf-IxPbIzd9y3nThw_nwoDZf-P';
 
 async function leerTotalDesdeSupabase() {
     try {
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/ciclos?select=total_ciclos`, {
+        // Consultar el ID más alto (último registro)
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/ciclos?select=id&order=id.desc&limit=1`, {
             headers: {
                 'apikey': SUPABASE_KEY,
                 'Authorization': `Bearer ${SUPABASE_KEY}`
@@ -44,24 +43,20 @@ async function leerTotalDesdeSupabase() {
         });
         
         const data = await response.json();
-        const ultimoRegistro = data[data.length - 1];
-        const total = ultimoRegistro?.total_ciclos || 0;
+        // El total acumulado es el ID del último registro
+        const totalAcumulado = data[0]?.id || 0;
         
-        console.log('📊 Total en Supabase:', total);
-        
-        globalTotalAcumulado = total;
+        console.log('📊 Total acumulado (por ID):', totalAcumulado);
         
         if (typeof mantenimiento !== 'undefined') {
-            mantenimiento.ciclos.total = total;
+            mantenimiento.ciclos.total = totalAcumulado;
             mantenimiento.guardarCiclos();
             if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
             if (typeof actualizarGraficos === 'function') actualizarGraficos();
         }
         
         const totalSpan = document.getElementById('totalCycles');
-        if (totalSpan) totalSpan.textContent = total;
-        
-        console.log(`🌍 Sincronizado con Supabase: ${total} ciclos totales`);
+        if (totalSpan) totalSpan.textContent = totalAcumulado;
         
     } catch (error) {
         console.log('⚠️ Error leyendo desde Supabase:', error);
@@ -72,38 +67,30 @@ async function leerTotalDesdeSupabase() {
 // CARGAR DATOS GUARDADOS LOCALMENTE (respaldo)
 // ============================================================
 function cargarDatosLocales() {
-    const guardadoTotal = localStorage.getItem('porton_total_acumulado');
-    if (guardadoTotal && globalTotalAcumulado === 0) {
-        globalTotalAcumulado = parseInt(guardadoTotal);
-        if (typeof mantenimiento !== 'undefined') {
-            mantenimiento.ciclos.total = globalTotalAcumulado;
-            mantenimiento.guardarCiclos();
-        }
-        console.log(`📀 Total acumulado local: ${globalTotalAcumulado} ciclos (respaldo)`);
-        
-        const totalCyclesSpan = document.getElementById('totalCycles');
-        if (totalCyclesSpan) {
-            totalCyclesSpan.textContent = globalTotalAcumulado;
-        }
+    const guardadoCiclosHoy = localStorage.getItem('porton_ciclos_hoy');
+    if (guardadoCiclosHoy) {
+        globalCiclosHoy = parseInt(guardadoCiclosHoy);
     }
     
-    const guardadoUltimoCiclo = localStorage.getItem('ultimo_ciclo_esp32');
-    ultimoCicloGuardado = guardadoUltimoCiclo ? parseInt(guardadoUltimoCiclo) : 0;
+    const todayCyclesSpan = document.getElementById('todayCycles');
+    if (todayCyclesSpan) {
+        todayCyclesSpan.textContent = globalCiclosHoy;
+    }
 }
 
-function guardarUltimoCicloESP32(ciclos) {
-    localStorage.setItem('ultimo_ciclo_esp32', ciclos.toString());
+function guardarCiclosHoy(ciclos) {
+    localStorage.setItem('porton_ciclos_hoy', ciclos.toString());
 }
 
-function guardarTotalAcumulado() {
-    localStorage.setItem('porton_total_acumulado', globalTotalAcumulado.toString());
-}
-
-function detectarCambioDeDia(fechaActual) {
+function detectarCambioDeDia() {
     const ultimaFecha = localStorage.getItem('ultima_fecha_contador');
-    if (ultimaFecha && ultimaFecha !== fechaActual) {
-        console.log(`🔄 Cambio de día detectado: ${ultimaFecha} → ${fechaActual}`);
-        ultimoCicloGuardado = 0;
+    const hoy = new Date().toISOString().split('T')[0];
+    
+    if (ultimaFecha && ultimaFecha !== hoy) {
+        console.log(`🔄 Cambio de día detectado: ${ultimaFecha} → ${hoy}`);
+        globalCiclosHoy = 0;
+        guardarCiclosHoy(0);
+        localStorage.setItem('ultima_fecha_contador', hoy);
         return true;
     }
     return false;
@@ -198,20 +185,15 @@ function updateMQTTStatus(connected) {
 }
 
 function handleMQTTMessage(topic, data) {
-    const timestamp = new Date().toISOString();
     const ahora = new Date();
     const hoy = ahora.toISOString().split('T')[0];
     
     switch(topic) {
         case 'porton/estado':
-            // ============================================
-            // ACTUALIZAR EL ESTADO ACTUAL
-            // ============================================
             console.log('🚪 ESTADO RECIBIDO:', data.estado);
             
             const stateSpan = document.getElementById('currentState');
             if (stateSpan) {
-                // Mostrar el estado con formato bonito
                 if (data.estado === 'ABIERTO') {
                     stateSpan.innerHTML = '✅ ABIERTO';
                 } else if (data.estado === 'CERRADO') {
@@ -222,18 +204,15 @@ function handleMQTTMessage(topic, data) {
                 console.log(`✅ Estado actualizado a: ${data.estado}`);
             }
             
-            // Actualizar la última actualización
             const lastUpdateSpan = document.getElementById('lastUpdate');
             if (lastUpdateSpan) {
                 lastUpdateSpan.textContent = `Último: ahora`;
             }
             
-            // Registrar evento
             if (typeof registro !== 'undefined') {
                 registro.agregarEvento('ESTADO', data);
             }
             
-            // Notificación
             if (typeof notificaciones !== 'undefined') {
                 notificaciones.alertaEstado(data.estado);
             }
@@ -245,62 +224,37 @@ function handleMQTTMessage(topic, data) {
             }
             break;
             
-        case 'porton/heartbeat':
-            // Ya manejado arriba
-            break;
-            
         case 'porton/contador/valor':
             const ciclosHoyRecibidos = data.ciclos;
             
             if (ciclosHoyRecibidos !== undefined) {
+                // Detectar cambio de día
+                const ultimaFecha = localStorage.getItem('ultima_fecha_contador');
+                if (ultimaFecha && ultimaFecha !== hoy) {
+                    console.log(`🔄 Cambio de día: ${ultimaFecha} → ${hoy}`);
+                    globalCiclosHoy = 0;
+                }
+                
+                // Actualizar ciclos del día
                 globalCiclosHoy = ciclosHoyRecibidos;
-                detectarCambioDeDia(hoy);
-                
-                let diferencia = 0;
-                if (ciclosHoyRecibidos >= ultimoCicloGuardado) {
-                    diferencia = ciclosHoyRecibidos - ultimoCicloGuardado;
-                } else {
-                    diferencia = ciclosHoyRecibidos;
-                }
-                
-                if (diferencia > 0) {
-                    globalTotalAcumulado += diferencia;
-                    guardarTotalAcumulado();
-                    
-                    console.log(`📊 +${diferencia} ciclos nuevos`);
-                    console.log(`📈 Total acumulado: ${globalTotalAcumulado} ciclos`);
-                    console.log(`📅 Ciclos hoy: ${ciclosHoyRecibidos}`);
-                    
-                    if (typeof mantenimiento !== 'undefined') {
-                        mantenimiento.ciclos.total = globalTotalAcumulado;
-                        mantenimiento.guardarCiclos();
-                    }
-                    
-                    if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
-                    if (typeof actualizarGraficos === 'function') actualizarGraficos();
-                    
-                    if (typeof registro !== 'undefined') {
-                        registro.agregarEvento('CONTADOR', { 
-                            ciclosHoy: ciclosHoyRecibidos,
-                            totalAcumulado: globalTotalAcumulado,
-                            nuevos: diferencia,
-                            timestamp: data.timestamp 
-                        });
-                    }
-                }
-                
-                ultimoCicloGuardado = ciclosHoyRecibidos;
-                guardarUltimoCicloESP32(ultimoCicloGuardado);
+                guardarCiclosHoy(globalCiclosHoy);
                 localStorage.setItem('ultima_fecha_contador', hoy);
+                
+                console.log(`📅 Ciclos hoy: ${globalCiclosHoy}`);
                 
                 const todayCyclesSpan = document.getElementById('todayCycles');
                 if (todayCyclesSpan) {
-                    todayCyclesSpan.textContent = ciclosHoyRecibidos;
+                    todayCyclesSpan.textContent = globalCiclosHoy;
                 }
                 
-                const totalCyclesSpan = document.getElementById('totalCycles');
-                if (totalCyclesSpan) {
-                    totalCyclesSpan.textContent = globalTotalAcumulado;
+                // Guardar para reporte diario (al final del día)
+                guardarCicloDiario(hoy, globalCiclosHoy);
+                
+                if (typeof registro !== 'undefined') {
+                    registro.agregarEvento('CONTADOR', { 
+                        ciclosHoy: ciclosHoyRecibidos,
+                        timestamp: data.timestamp 
+                    });
                 }
             }
             break;
@@ -309,7 +263,6 @@ function handleMQTTMessage(topic, data) {
             console.log(`Topic no manejado: ${topic}`, data);
     }
     
-    // Actualizar gráficos y estadísticas generales
     if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
     if (typeof actualizarGraficos === 'function') actualizarGraficos();
 }
