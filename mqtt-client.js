@@ -44,16 +44,13 @@ async function leerTotalDesdeSupabase() {
         });
         
         const data = await response.json();
-        // Obtener el último registro (el de mayor id)
         const ultimoRegistro = data[data.length - 1];
         const total = ultimoRegistro?.total_ciclos || 0;
         
-        console.log('📊 Total en Supabase (último registro):', total);
+        console.log('📊 Total en Supabase:', total);
         
-        // Actualizar variable global
         globalTotalAcumulado = total;
         
-        // Actualizar mantenimiento
         if (typeof mantenimiento !== 'undefined') {
             mantenimiento.ciclos.total = total;
             mantenimiento.guardarCiclos();
@@ -61,7 +58,6 @@ async function leerTotalDesdeSupabase() {
             if (typeof actualizarGraficos === 'function') actualizarGraficos();
         }
         
-        // Actualizar el span directamente
         const totalSpan = document.getElementById('totalCycles');
         if (totalSpan) totalSpan.textContent = total;
         
@@ -164,7 +160,6 @@ function connectMQTT() {
     
     mqttClient.on('message', (topic, message) => {
         try {
-            // Manejar heartbeat que viene como texto plano
             if (topic === 'porton/heartbeat') {
                 const online = message.toString() === 'online';
                 if (typeof registro !== 'undefined') {
@@ -209,16 +204,35 @@ function handleMQTTMessage(topic, data) {
     
     switch(topic) {
         case 'porton/estado':
+            // ============================================
+            // ACTUALIZAR EL ESTADO ACTUAL EN LA TARJETA ⚡
+            // ============================================
+            console.log('🔥 ESTADO RECIBIDO:', data);
+            console.log('Valor de estado:', data.estado);
+            
             const stateSpan = document.getElementById('currentState');
+            console.log('Elemento currentState:', stateSpan);
+            
             if (stateSpan && data.estado) {
                 stateSpan.textContent = data.estado;
-                console.log(`🚪 Estado actualizado: ${data.estado}`);
+                console.log(`✅ Estado actualizado a: ${data.estado}`);
+            } else {
+                console.log('❌ No se pudo actualizar el estado');
             }
+            
+            // Actualizar la última actualización
+            const lastUpdateSpan = document.getElementById('lastUpdate');
+            if (lastUpdateSpan) {
+                lastUpdateSpan.textContent = `Último: hace 0s`;
+            }
+            
             if (typeof registro !== 'undefined') {
                 registro.agregarEvento('ESTADO', data);
             }
+            
             if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
             if (typeof actualizarGraficos === 'function') actualizarGraficos();
+            
             if (typeof notificaciones !== 'undefined') {
                 notificaciones.alertaEstado(data.estado);
             }
@@ -228,10 +242,6 @@ function handleMQTTMessage(topic, data) {
             if (typeof registro !== 'undefined') {
                 registro.agregarEvento('SENSORES', data);
             }
-            break;
-            
-        case 'porton/heartbeat':
-            // Ya manejado arriba
             break;
             
         case 'porton/contador/valor':
@@ -301,7 +311,6 @@ function handleMQTTMessage(topic, data) {
 document.addEventListener('DOMContentLoaded', () => {
     cargarDatosLocales();
     connectMQTT();
-    // Leer desde Supabase al iniciar y cada 10 segundos
     leerTotalDesdeSupabase();
     setInterval(leerTotalDesdeSupabase, 10000);
 });
