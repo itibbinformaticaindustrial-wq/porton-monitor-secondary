@@ -2,7 +2,6 @@
 // mqtt-client.js - Página Secundaria SmartGate Monitor
 // ITIBB - Informática Industrial
 // ============================================================
-
 let globalCiclosHoy = 0;
 let globalTotalAcumulado = 0;
 let ultimoCicloProcesado = 0;  // Para evitar duplicados
