@@ -1,42 +1,25 @@
 // ============================================================
-// SMARTGATE - SISTEMA DE MANTENIMIENTO (con Supabase)
+// maintenance.js - Sistema de Mantenimiento SmartGate
+// ITIBB - Informática Industrial - v2.1
+// Integrado con Supabase para historial real
 // ============================================================
 
 class SistemaMantenimiento {
     constructor() {
         this.ciclos = this.cargarCiclos();
-        
-        // Estado ANTERIOR de los sensores (para detectar flancos)
-        this.estadoAnterior = {
-            abierto: false,
-            cerrado: false
-        };
-        
-        // Bandera para evitar múltiples conteos en un mismo ciclo
+        this.estadoAnterior = { abierto: false, cerrado: false };
         this.ultimoCicloRegistrado = null;
-        
         this.alertas = [];
         this.historialMantenimiento = this.cargarHistorialMantenimiento();
         this.ultimoEstadoPorton = null;
     }
 
     cargarCiclos() {
-        // Primero intentar cargar desde localStorage
         const guardado = localStorage.getItem('porton_ciclos_avanzado');
-        const datosLocales = guardado ? JSON.parse(guardado) : {
-            total: 0,
-            historial: [],
-            ultimoMantenimiento: null,
-            predicciones: {}
+        return guardado ? JSON.parse(guardado) : {
+            total: 0, hoy: 0, historial: [],
+            ultimoMantenimiento: null, predicciones: {}
         };
-        
-        // Intentar cargar desde Supabase si está disponible
-        if (typeof globalTotalAcumulado !== 'undefined' && globalTotalAcumulado > 0) {
-            datosLocales.total = globalTotalAcumulado;
-            console.log(`📊 Cargando total desde Supabase: ${globalTotalAcumulado}`);
-        }
-        
-        return datosLocales;
     }
 
     cargarHistorialMantenimiento() {
@@ -46,347 +29,262 @@ class SistemaMantenimiento {
 
     guardarCiclos() {
         localStorage.setItem('porton_ciclos_avanzado', JSON.stringify(this.ciclos));
-        console.log(`💾 Ciclos guardados localmente: ${this.ciclos.total}`);
     }
 
     guardarHistorialMantenimiento() {
-        localStorage.setItem('porton_historial_mantenimiento', JSON.stringify(this.historialMantenimiento));
+        localStorage.setItem('porton_historial_mantenimiento',
+            JSON.stringify(this.historialMantenimiento));
     }
 
-    // ============================================================
-    // MÉTODO 1: Procesar cambio de estado (solo para mostrar)
-    // ============================================================
-    procesarCambioEstado(nuevoEstado, timestamp) {
-        console.log(`🔄 Estado del portón: ${nuevoEstado}`);
+    procesarCambioEstado(nuevoEstado) {
         this.ultimoEstadoPorton = nuevoEstado;
     }
 
-    // ============================================================
-    // MÉTODO PRINCIPAL: Procesar sensores (solo monitoreo)
-    // El ESP32 es quien cuenta y envía el contador real
-    // ============================================================
-    procesarSensores(sensores, timestamp) {
-        const abiertoActual = sensores.abierto === true;
-        const cerradoActual = sensores.cerrado === true;
-        
-        const abiertoAnterior = this.estadoAnterior.abierto;
-        const cerradoAnterior = this.estadoAnterior.cerrado;
-        
-        if (abiertoActual !== abiertoAnterior) {
-            console.log(`📡 Sensor ABIERTO: ${abiertoAnterior} → ${abiertoActual}`);
-        }
-        if (cerradoActual !== cerradoAnterior) {
-            console.log(`📡 Sensor CERRADO: ${cerradoAnterior} → ${cerradoActual}`);
-        }
-        
+    procesarSensores(sensores) {
         this.estadoAnterior = {
-            abierto: abiertoActual,
-            cerrado: cerradoActual
+            abierto: sensores.abierto === true,
+            cerrado: sensores.cerrado === true
         };
     }
 
-    // ============================================================
-    // ACTUALIZAR TOTAL DESDE SUPABASE (llamado externamente)
-    // ============================================================
-    actualizarTotalDesdeSupabase(nuevoTotal) {
-        if (nuevoTotal > this.ciclos.total) {
-            this.ciclos.total = nuevoTotal;
-            this.guardarCiclos();
-            this.verificarAlertasMantenimiento();
-            this.actualizarPredicciones();
-            this.actualizarSaludSistema();
-            console.log(`🌍 Total actualizado desde Supabase: ${nuevoTotal} ciclos`);
-            return true;
-        }
-        return false;
-    }
-
-    // ============================================================
-    // ACTUALIZAR CICLOS HOY (llamado externamente)
-    // ============================================================
-    actualizarCiclosHoy(ciclosHoy) {
-        // Actualizar el historial para que obtenerCiclosHoy() funcione
-        const hoy = new Date().toISOString().split('T')[0];
-        const indexHoy = this.ciclos.historial.findIndex(c => c.fecha === hoy);
-        
-        if (indexHoy !== -1) {
-            this.ciclos.historial[indexHoy].numero = ciclosHoy;
-            this.ciclos.historial[indexHoy].timestamp = new Date().toISOString();
-        } else {
-            this.ciclos.historial.unshift({
-                numero: ciclosHoy,
-                timestamp: new Date().toISOString(),
-                fecha: hoy,
-                hora: new Date().getHours()
-            });
-        }
-        
-        // Mantener solo los últimos 365 días
-        if (this.ciclos.historial.length > 365) {
-            this.ciclos.historial = this.ciclos.historial.slice(0, 365);
-        }
-        
-        this.guardarCiclos();
-        console.log(`📅 Ciclos hoy actualizados: ${ciclosHoy}`);
-    }
-
+    // ── Salud del sistema ─────────────────────────────────────
     actualizarSaludSistema() {
         const total = this.ciclos.total;
         const porcentajeDesgaste = Math.min(100, (total / 5000) * 100);
         const salud = Math.max(0, 100 - porcentajeDesgaste);
-        
-        const circulo = document.getElementById('healthCircle');
-        const porcentajeSpan = document.getElementById('healthPercent');
-        const eficienciaSpan = document.getElementById('efficiency');
+
+        const circulo      = document.getElementById('healthCircle');
+        const porcSpan     = document.getElementById('healthPercent');
+        const eficSpan     = document.getElementById('efficiency');
         const desgasteSpan = document.getElementById('wearLevel');
-        const ciclosVidaSpan = document.getElementById('lifeCycles');
-        const prediccionSpan = document.getElementById('failurePrediction');
-        
-        if (circulo && porcentajeSpan) {
-            const circunferencia = 283;
-            const offset = circunferencia - (salud / 100) * circunferencia;
+        const vidaSpan     = document.getElementById('lifeCycles');
+        const predSpan     = document.getElementById('failurePrediction');
+
+        if (circulo && porcSpan) {
+            const offset = 283 - (salud / 100) * 283;
             circulo.style.strokeDashoffset = offset;
-            porcentajeSpan.textContent = Math.round(salud);
-            
-            if (salud > 70) circulo.style.stroke = '#10b981';
-            else if (salud > 40) circulo.style.stroke = '#f59e0b';
-            else circulo.style.stroke = '#ef4444';
+            porcSpan.textContent = Math.round(salud);
+            circulo.style.stroke = salud > 70 ? '#10b981' : salud > 40 ? '#f59e0b' : '#ef4444';
         }
-        
-        if (eficienciaSpan) {
-            const eficiencia = Math.max(0, 100 - (total / 100));
-            eficienciaSpan.textContent = Math.round(eficiencia) + '%';
-        }
-        
-        if (desgasteSpan) {
-            desgasteSpan.textContent = Math.round(porcentajeDesgaste) + '%';
-        }
-        
-        if (ciclosVidaSpan) {
-            ciclosVidaSpan.textContent = `${total} / 5000`;
-        }
-        
-        if (prediccionSpan) {
-            if (total > 4500) prediccionSpan.textContent = 'Crítico - Reemplazo próximo';
-            else if (total > 4000) prediccionSpan.textContent = 'Alto desgaste';
-            else if (total > 3000) prediccionSpan.textContent = 'Desgaste moderado';
-            else if (total > 2000) prediccionSpan.textContent = 'Normal';
-            else prediccionSpan.textContent = 'Excelente';
+        if (eficSpan)     eficSpan.textContent     = Math.round(Math.max(0, 100 - total / 100)) + '%';
+        if (desgasteSpan) desgasteSpan.textContent = Math.round(porcentajeDesgaste) + '%';
+        if (vidaSpan)     vidaSpan.textContent      = `${total} / 5000`;
+        if (predSpan) {
+            predSpan.textContent =
+                total > 4500 ? 'Crítico — Reemplazo próximo' :
+                total > 4000 ? 'Alto desgaste' :
+                total > 3000 ? 'Desgaste moderado' :
+                total > 2000 ? 'Normal' : 'Excelente';
         }
     }
 
     actualizarPredicciones() {
-        const total = this.ciclos.total;
-        const siguiente500 = Math.ceil(total / 500) * 500;
-        const ciclosRestantes = siguiente500 - total;
-        
-        const proximoMantenimientoSpan = document.getElementById('nextMaintenance');
-        const ciclosRestantesSpan = document.getElementById('cyclesToNext');
-        
-        if (proximoMantenimientoSpan) {
-            if (siguiente500 === 500) proximoMantenimientoSpan.textContent = 'Revisión 500 ciclos';
-            else if (siguiente500 === 1000) proximoMantenimientoSpan.textContent = 'Lubricación';
-            else if (siguiente500 === 2000) proximoMantenimientoSpan.textContent = 'Revisión General';
-            else proximoMantenimientoSpan.textContent = `Revisión en ${siguiente500} ciclos`;
+        const total            = this.ciclos.total;
+        const siguiente500     = Math.ceil((total + 1) / 500) * 500;
+        const ciclosRestantes  = siguiente500 - total;
+
+        const proxSpan  = document.getElementById('nextMaintenance');
+        const restSpan  = document.getElementById('cyclesToNext');
+
+        if (proxSpan) {
+            proxSpan.textContent =
+                siguiente500 <= 500  ? 'Revisión 500 ciclos' :
+                siguiente500 <= 1000 ? 'Lubricación' :
+                siguiente500 <= 2000 ? 'Revisión General' :
+                `Revisión en ${siguiente500} ciclos`;
         }
-        
-        if (ciclosRestantesSpan) {
-            ciclosRestantesSpan.textContent = `${ciclosRestantes} ciclos restantes`;
-        }
+        if (restSpan) restSpan.textContent = `${ciclosRestantes} ciclos restantes`;
     }
 
+    // ── Alertas de mantenimiento ──────────────────────────────
     verificarAlertasMantenimiento() {
         const total = this.ciclos.total;
         this.alertas = [];
-        
-        const siguiente500 = Math.ceil(total / 500) * 500;
+        const siguiente500    = Math.ceil((total + 1) / 500) * 500;
         const ciclosRestantes = siguiente500 - total;
-        
-        if (total >= 2000 && total % 2000 === 0) {
+
+        if (total > 0 && total % 2000 === 0) {
             this.alertas.push({
-                nivel: 'danger',
+                nivel: 'danger', prioridad: 'Alta',
                 titulo: '⚠️ REVISIÓN GENERAL URGENTE',
-                mensaje: 'Se han alcanzado los 2000 ciclos',
-                accion: 'Inspección completa: motor, engranajes, estructura y sistema eléctrico',
-                prioridad: 'Alta'
+                mensaje: `Se han alcanzado los ${total} ciclos`,
+                accion: 'Inspección completa: motor, engranajes, estructura y sistema eléctrico'
             });
-            this.agregarRegistroMantenimiento('Revisión General', 2000);
-            if (typeof notificaciones !== 'undefined') {
-                notificaciones.alertaMantenimiento('REVISIÓN GENERAL - 2000 ciclos alcanzados');
-            }
-        } else if (total >= 1000 && total % 1000 === 0) {
+            this.agregarRegistroMantenimiento('Revisión General', total);
+            if (typeof notificaciones !== 'undefined')
+                notificaciones.alertaMantenimiento('REVISIÓN GENERAL — ' + total + ' ciclos');
+
+        } else if (total > 0 && total % 1000 === 0) {
             this.alertas.push({
-                nivel: 'warning',
+                nivel: 'warning', prioridad: 'Media',
                 titulo: '🛢️ LUBRICACIÓN REQUERIDA',
-                mensaje: '1000 ciclos alcanzados',
-                accion: 'Aplicar lubricante en guías, cadena o cremallera. Verificar desgaste.',
-                prioridad: 'Media'
+                mensaje: `${total} ciclos alcanzados`,
+                accion: 'Aplicar lubricante en guías, cadena o cremallera. Verificar desgaste.'
             });
-            this.agregarRegistroMantenimiento('Lubricación', 1000);
-            if (typeof notificaciones !== 'undefined') {
-                notificaciones.alertaMantenimiento('LUBRICACIÓN - 1000 ciclos alcanzados');
-            }
-        } else if (total >= 500 && total % 500 === 0) {
+            this.agregarRegistroMantenimiento('Lubricación', total);
+            if (typeof notificaciones !== 'undefined')
+                notificaciones.alertaMantenimiento('LUBRICACIÓN — ' + total + ' ciclos');
+
+        } else if (total > 0 && total % 500 === 0) {
             this.alertas.push({
-                nivel: 'info',
+                nivel: 'info', prioridad: 'Normal',
                 titulo: '🔍 REVISIÓN PREVENTIVA',
-                mensaje: '500 ciclos completados',
-                accion: 'Verificar tornillos, conexiones, fotocélulas y ajustes generales',
-                prioridad: 'Normal'
+                mensaje: `${total} ciclos completados`,
+                accion: 'Verificar tornillos, conexiones, fotocélulas y ajustes generales'
             });
-            this.agregarRegistroMantenimiento('Revisión Preventiva', 500);
-            if (typeof notificaciones !== 'undefined') {
-                notificaciones.alertaMantenimiento('REVISIÓN PREVENTIVA - 500 ciclos');
-            }
+            this.agregarRegistroMantenimiento('Revisión Preventiva', total);
+            if (typeof notificaciones !== 'undefined')
+                notificaciones.alertaMantenimiento('REVISIÓN PREVENTIVA — ' + total + ' ciclos');
+
         } else if (ciclosRestantes <= 50 && ciclosRestantes > 0) {
             this.alertas.push({
-                nivel: 'warning',
+                nivel: 'warning', prioridad: 'Media',
                 titulo: '📢 MANTENIMIENTO PRÓXIMO',
                 mensaje: `Faltan ${ciclosRestantes} ciclos para la próxima revisión`,
-                accion: 'Programar mantenimiento preventivo con anticipación',
-                prioridad: 'Media'
+                accion: 'Programar mantenimiento preventivo con anticipación'
             });
         }
-        
+
         this.mostrarAlertas();
     }
 
-    agregarRegistroMantenimiento(tipo, ciclosEnMantenimiento) {
-        this.historialMantenimiento.push({
+    // ── Registrar mantenimiento (local + Supabase) ────────────
+    async agregarRegistroMantenimiento(tipo, ciclosEnMantenimiento, notas = '') {
+        const registro = {
             fecha: new Date().toISOString(),
-            tipo: tipo,
-            ciclosEnMantenimiento: ciclosEnMantenimiento,
-            totalCiclos: this.ciclos.total
-        });
+            tipo,
+            ciclosEnMantenimiento,
+            totalCiclos: this.ciclos.total,
+            notas
+        };
+        this.historialMantenimiento.unshift(registro);
         this.guardarHistorialMantenimiento();
+
+        // Guardar también en Supabase
+        if (typeof guardarMantenimientoSupabase === 'function') {
+            await guardarMantenimientoSupabase(tipo, notas || `Automático en ${ciclosEnMantenimiento} ciclos`);
+        }
+        this.actualizarTablaMantenimiento();
     }
 
     mostrarAlertas() {
-        const contenedor = document.getElementById('alertsContainer');
-        const contadorAlertasSpan = document.getElementById('alertCount');
-        
+        const contenedor    = document.getElementById('alertsContainer');
+        const contadorSpan  = document.getElementById('alertCount');
         if (!contenedor) return;
-        
+
+        if (contadorSpan) contadorSpan.textContent =
+            this.alertas.length > 0 ? `${this.alertas.length} alertas` : '0 alertas';
+
         if (this.alertas.length === 0) {
             contenedor.innerHTML = '<div class="alert alert-success">✅ Todo en orden. El sistema opera correctamente.</div>';
-            if (contadorAlertasSpan) contadorAlertasSpan.textContent = '0 alertas';
-            return;
+        } else {
+            contenedor.innerHTML = this.alertas.map(a => `
+                <div class="alert alert-${a.nivel}">
+                    <strong>${a.titulo}</strong>
+                    <div>${a.mensaje}</div>
+                    <small>📋 ${a.accion}</small>
+                    <span class="priority-badge">Prioridad: ${a.prioridad}</span>
+                </div>`).join('');
         }
-        
-        if (contadorAlertasSpan) contadorAlertasSpan.textContent = `${this.alertas.length} alertas`;
-        
-        contenedor.innerHTML = this.alertas.map(alerta => `
-            <div class="alert alert-${alerta.nivel}">
-                <strong>${alerta.titulo}</strong>
-                <div>${alerta.mensaje}</div>
-                <small>📋 ${alerta.accion}</small>
-                <span class="priority-badge">Prioridad: ${alerta.prioridad}</span>
-            </div>
-        `).join('');
-        
+
         this.actualizarRecomendaciones();
     }
 
     actualizarRecomendaciones() {
         const contenedor = document.getElementById('recommendationsList');
         if (!contenedor) return;
-        
-        const recomendaciones = [];
-        
-        if (this.ciclos.total > 4000) {
-            recomendaciones.push('⚠️ Considere reemplazo preventivo del motor en los próximos meses');
-        } else if (this.ciclos.total > 3000) {
-            recomendaciones.push('🔧 Programar inspección de motor y engranajes');
-        } else if (this.ciclos.total > 2000) {
-            recomendaciones.push('🛢️ Verificar nivel de lubricación cada 2 semanas');
-        } else if (this.ciclos.total > 1000) {
-            recomendaciones.push('✅ Mantenimiento regular según lo programado');
-        } else {
-            recomendaciones.push('🌟 Sistema en excelente estado, siga con el uso normal');
-        }
-        
-        recomendaciones.push('📱 Revise mensualmente el estado de las fotocélulas');
-        recomendaciones.push('🔌 Verifique conexiones eléctricas cada 3 meses');
-        
-        contenedor.innerHTML = recomendaciones.map(rec => `
-            <div class="recommendation-item">${rec}</div>
-        `).join('');
-        
+        const total = this.ciclos.total;
+        const recs = total > 4000 ? ['⚠️ Considere reemplazo preventivo del motor en los próximos meses'] :
+                     total > 3000 ? ['🔧 Programar inspección de motor y engranajes'] :
+                     total > 2000 ? ['🛢️ Verificar nivel de lubricación cada 2 semanas'] :
+                     total > 1000 ? ['✅ Mantenimiento regular según lo programado'] :
+                                   ['🌟 Sistema en excelente estado, siga con el uso normal'];
+        recs.push('📱 Revise mensualmente el estado de las fotocélulas');
+        recs.push('🔌 Verifique conexiones eléctricas cada 3 meses');
+        contenedor.innerHTML = recs.map(r => `<div class="recommendation-item">${r}</div>`).join('');
         this.actualizarCalendario();
     }
 
     actualizarCalendario() {
         const contenedor = document.getElementById('scheduleTimeline');
         if (!contenedor) return;
-        
-        const proximos = [];
         const total = this.ciclos.total;
-        
-        [500, 1000, 2000].forEach(limite => {
-            const siguiente = Math.ceil(total / limite) * limite;
-            if (siguiente > total) {
-                const restantes = siguiente - total;
-                let tipo = '';
-                if (limite === 500) tipo = '🔍 Revisión Preventiva';
-                else if (limite === 1000) tipo = '🛢️ Lubricación';
-                else tipo = '🔧 Revisión General';
-                
-                proximos.push({
-                    tipo: tipo,
-                    ciclosRestantes: restantes,
-                    cuando: restantes <= 100 ? '⚠️ PRÓXIMO' : 'Programado'
-                });
-            }
-        });
-        
-        contenedor.innerHTML = proximos.map(item => `
+        const proximos = [500, 1000, 2000].map(lim => {
+            const sig = Math.ceil((total + 1) / lim) * lim;
+            if (sig <= total) return null;
+            return {
+                tipo: lim === 500  ? '🔍 Revisión Preventiva' :
+                      lim === 1000 ? '🛢️ Lubricación' : '🔧 Revisión General',
+                restantes: sig - total
+            };
+        }).filter(Boolean);
+
+        contenedor.innerHTML = proximos.map(p => `
             <div class="schedule-item">
-                <strong>${item.tipo}</strong><br>
-                <small>Faltan ${item.ciclosRestantes} ciclos - ${item.cuando}</small>
-            </div>
-        `).join('');
-        
-        if (proximos.length === 0) {
-            contenedor.innerHTML = '<div class="empty-state">No hay mantenimientos programados próximamente</div>';
-        }
+                <strong>${p.tipo}</strong><br>
+                <small>Faltan ${p.restantes} ciclos ${p.restantes <= 100 ? '— ⚠️ PRÓXIMO' : ''}</small>
+            </div>`).join('') || '<div class="empty-state">Sin mantenimientos próximos</div>';
     }
 
-    // ============================================================
-    // MÉTODOS PARA GRÁFICOS Y ESTADÍSTICAS
-    // ============================================================
+    // ── Tabla de historial de mantenimiento ───────────────────
+    async actualizarTablaMantenimiento() {
+        const tbody = document.getElementById('maintenanceHistoryBody');
+        if (!tbody) return;
+
+        // Intentar cargar desde Supabase primero
+        let historial = this.historialMantenimiento;
+        if (typeof leerMantenimientosSupabase === 'function') {
+            const supabaseData = await leerMantenimientosSupabase(50);
+            if (supabaseData && supabaseData.length > 0) {
+                historial = supabaseData.map(r => ({
+                    fecha: r.fecha,
+                    tipo: r.tipo,
+                    ciclosEnMantenimiento: r.ciclos_en_evento,
+                    notas: r.notas || '',
+                    realizado_por: r.realizado_por
+                }));
+            }
+        }
+
+        if (historial.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;opacity:0.6">Sin historial de mantenimiento</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = historial.map(h => `
+            <tr>
+                <td>${new Date(h.fecha).toLocaleString('es-BO')}</td>
+                <td><strong>${h.tipo}</strong></td>
+                <td>${h.ciclosEnMantenimiento || '—'}</td>
+                <td>${h.notas || h.realizado_por || '—'}</td>
+            </tr>`).join('');
+    }
+
+    // ── Datos para gráficos ───────────────────────────────────
     obtenerCiclosPorDia(dias = 7) {
         const diario = {};
-        const hoy = new Date();
-        
         for (let i = 0; i < dias; i++) {
-            const fecha = new Date(hoy);
-            fecha.setDate(fecha.getDate() - i);
-            const fechaStr = fecha.toISOString().split('T')[0];
-            diario[fechaStr] = 0;
+            const f = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
+            diario[f] = 0;
         }
-        
-        this.ciclos.historial.forEach(ciclo => {
-            if (diario[ciclo.fecha] !== undefined) {
-                diario[ciclo.fecha]++;
-            }
+        this.ciclos.historial.forEach(c => {
+            if (diario[c.fecha] !== undefined) diario[c.fecha]++;
         });
-        
         return Object.entries(diario).reverse();
     }
 
     obtenerCiclosPorHora() {
         const porHora = Array(24).fill(0);
-        this.ciclos.historial.forEach(ciclo => {
-            const hora = new Date(ciclo.timestamp).getHours();
-            porHora[hora]++;
+        this.ciclos.historial.forEach(c => {
+            porHora[new Date(c.timestamp).getHours()]++;
         });
         return porHora;
     }
 
     obtenerEstadisticasMensuales() {
         const mensual = {};
-        this.ciclos.historial.forEach(ciclo => {
-            const mes = ciclo.fecha.substring(0, 7);
+        this.ciclos.historial.forEach(c => {
+            const mes = c.fecha.substring(0, 7);
             mensual[mes] = (mensual[mes] || 0) + 1;
         });
         return Object.entries(mensual).slice(-6);
@@ -394,21 +292,60 @@ class SistemaMantenimiento {
 
     obtenerCiclosHoy() {
         const hoy = new Date().toISOString().split('T')[0];
-        const cicloHoy = this.ciclos.historial.find(c => c.fecha === hoy);
-        return cicloHoy ? cicloHoy.numero : 0;
+        return this.ciclos.historial.filter(c => c.fecha === hoy).length;
     }
 
     obtenerTendenciaSemanal() {
-        const hoy = this.obtenerCiclosHoy();
-        const ayer = new Date();
-        ayer.setDate(ayer.getDate() - 1);
-        const ayerStr = ayer.toISOString().split('T')[0];
-        const ciclosAyer = this.ciclos.historial.find(c => c.fecha === ayerStr);
-        return hoy - (ciclosAyer ? ciclosAyer.numero : 0);
+        return this.obtenerCiclosHoy() -
+            this.ciclos.historial.filter(c =>
+                c.fecha === new Date(Date.now() - 86400000).toISOString().split('T')[0]
+            ).length;
     }
 }
 
 // ============================================================
-// INICIALIZACIÓN
+// RESET DE CONTADOR DESDE LA UI
 // ============================================================
+async function resetearContadorUI() {
+    const total = typeof globalTotalAcumulado !== 'undefined' ? globalTotalAcumulado : mantenimiento.ciclos.total;
+
+    if (!confirm(`⚠️ ¿Resetear el contador?\nTotal actual: ${total} ciclos\nEsta acción guardará el evento en el historial de Supabase.`)) return;
+
+    const motivo = prompt('Motivo del reset (ej: mantenimiento realizado):', 'Mantenimiento completado') || 'Reset manual';
+    const quien  = prompt('Realizado por:', 'Operador') || 'Operador';
+
+    if (typeof resetearContadorSupabase === 'function') {
+        const resultado = await resetearContadorSupabase(motivo, quien);
+        if (resultado && resultado.exito) {
+            mantenimiento.ciclos.total = 0;
+            mantenimiento.ciclos.hoy   = 0;
+            mantenimiento.guardarCiclos();
+            mantenimiento.actualizarSaludSistema();
+            mantenimiento.verificarAlertasMantenimiento();
+            mantenimiento.actualizarTablaMantenimiento();
+            alert(`✅ Contador reseteado.\nCiclos antes del reset: ${resultado.ciclos_antes}\nMotivo: ${motivo}`);
+        }
+    } else {
+        // Fallback solo local
+        mantenimiento.ciclos.total = 0;
+        mantenimiento.guardarCiclos();
+        alert('✅ Contador reseteado localmente (Supabase no disponible)');
+    }
+}
+
+// ── Guardado diario programado ────────────────────────────────
+function programarGuardadoDiario() {
+    const ahora = new Date();
+    const msHastaMedianoche = new Date(
+        ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + 1
+    ) - ahora;
+    setTimeout(() => {
+        if (typeof leerResumenSupabase === 'function') leerResumenSupabase();
+        setInterval(() => {
+            if (typeof leerResumenSupabase === 'function') leerResumenSupabase();
+        }, 24 * 60 * 60 * 1000);
+    }, msHastaMedianoche);
+}
+
+programarGuardadoDiario();
 const mantenimiento = new SistemaMantenimiento();
