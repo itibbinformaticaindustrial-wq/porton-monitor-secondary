@@ -2,9 +2,11 @@
 // mqtt-client.js - Página Secundaria SmartGate Monitor
 // ITIBB - Informática Industrial
 // ============================================================
+
 let globalCiclosHoy = 0;
 let globalTotalAcumulado = 0;
-let ultimoCicloProcesado = 0;  // Para evitar duplicados
+let ultimoCicloProcesado = 0;
+let ultimoTimestampProcesado = 0;
 
 // Exponer variables globales para otros scripts
 window.globalTotalAcumulado = globalTotalAcumulado;
@@ -47,7 +49,7 @@ function sbHeaders() {
 // ── Leer resumen completo desde la función SQL ──────────────
 async function leerResumenSupabase() {
     try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/obtener_resumen`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/obtener_estado_actual_v3`, {
             method: 'POST',
             headers: sbHeaders(),
             body: '{}'
@@ -57,34 +59,24 @@ async function leerResumenSupabase() {
         globalTotalAcumulado = data.total_acumulado || 0;
         globalCiclosHoy = data.ciclos_hoy || 0;
 
-        // Actualizar variables globales expuestas
         window.globalTotalAcumulado = globalTotalAcumulado;
         window.globalCiclosHoy = globalCiclosHoy;
 
-        // Actualizar UI
-        const totalEl  = document.getElementById('totalCycles');
-        const hoyEl    = document.getElementById('todayCycles');
-        const semanaEl = document.getElementById('weekCycles');
-        const mesEl    = document.getElementById('monthCycles');
+        const totalEl = document.getElementById('totalCycles');
+        const hoyEl = document.getElementById('todayCycles');
 
-        if (totalEl)  totalEl.textContent  = globalTotalAcumulado;
-        if (hoyEl)    hoyEl.textContent    = globalCiclosHoy;
-        if (semanaEl) semanaEl.textContent = data.ciclos_semana || 0;
-        if (mesEl)    mesEl.textContent    = data.ciclos_mes    || 0;
+        if (totalEl) totalEl.textContent = globalTotalAcumulado;
+        if (hoyEl) hoyEl.textContent = globalCiclosHoy;
 
-        // Actualizar mantenimiento con total real
         if (typeof mantenimiento !== 'undefined') {
             mantenimiento.ciclos.total = globalTotalAcumulado;
-            if (typeof mantenimiento.actualizarCiclosHoy === 'function') {
-                mantenimiento.actualizarCiclosHoy(globalCiclosHoy);
-            }
             mantenimiento.guardarCiclos();
             mantenimiento.actualizarSaludSistema();
             mantenimiento.verificarAlertasMantenimiento();
         }
 
         if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
-        if (typeof actualizarGraficos     === 'function') actualizarGraficos();
+        if (typeof actualizarGraficos === 'function') actualizarGraficos();
 
         console.log('📊 Resumen Supabase:', data);
         return data;
@@ -94,32 +86,67 @@ async function leerResumenSupabase() {
     }
 }
 
-// ── Registrar ciclos del día via función SQL ────────────────
-async function registrarCiclosEnSupabase(ciclosHoy) {
+// ── Registrar ciclos con la función V5 (timestamps y reinicios) ──
+async function registrarCiclosEnSupabase(ciclosHoy, horaInicio = null, horaActual = null) {
     try {
         const hoy = new Date().toISOString().split('T')[0];
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/registrar_ciclos_esp32`, {
+        const ahora = horaActual || Math.floor(Date.now() / 1000);
+        const inicio = horaInicio || ahora;
+        
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/registrar_ciclos_esp32_v5`, {
             method: 'POST',
             headers: sbHeaders(),
-            body: JSON.stringify({ p_ciclos_hoy: ciclosHoy, p_fecha: hoy })
+            body: JSON.stringify({ 
+                p_ciclos_recibidos: ciclosHoy,
+                p_hora_inicio: inicio,
+                p_hora_actual: ahora,
+                p_fecha: hoy
+            })
         });
         const data = await res.json();
         
         if (data && data.exito === true) {
             globalTotalAcumulado = data.total_acumulado;
+            globalCiclosHoy = data.ciclos_hoy;
             window.globalTotalAcumulado = globalTotalAcumulado;
-            console.log('✅ Ciclos registrados en Supabase:', data);
+            window.globalCiclosHoy = globalCiclosHoy;
             
-            // Refrescar UI después de registrar
+            console.log(`📊 ${data.mensaje}`);
+            
+            if (data.reinicio_detectado) {
+                console.warn(`⚠️ REINICIO DETECTADO: El ESP32 debe usar ${data.esp32_debe_usar} ciclos`);
+                // Intentar publicar corrección al ESP32
+                if (mqttClient && mqttClient.connected) {
+                    mqttClient.publish('porton/comandos', `AJUSTAR_CONTADOR:${data.esp32_debe_usar}`);
+                }
+            }
+            
             await leerResumenSupabase();
-            return true;
+            return data;
         } else {
             console.warn('⚠️ La función no devolvió exito:', data);
-            return false;
+            return null;
         }
     } catch (e) {
         console.warn('⚠️ Error registrando ciclos:', e);
-        return false;
+        return null;
+    }
+}
+
+// ── Obtener estado actual para ESP32 ────────────────────────
+async function obtenerEstadoActualParaESP32() {
+    try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/obtener_estado_actual_v3`, {
+            method: 'POST',
+            headers: sbHeaders(),
+            body: '{}'
+        });
+        const data = await res.json();
+        console.log('📡 Estado para ESP32:', data);
+        return data;
+    } catch (e) {
+        console.warn('⚠️ Error obteniendo estado:', e);
+        return null;
     }
 }
 
@@ -161,10 +188,10 @@ async function resetearContadorSupabase(motivo = 'Reset manual', realizadoPor = 
             window.globalTotalAcumulado = 0;
             window.globalCiclosHoy = 0;
             ultimoCicloProcesado = 0;
+            ultimoTimestampProcesado = 0;
             
             await leerResumenSupabase();
             
-            // Mostrar notificación
             if (typeof notificaciones !== 'undefined') {
                 notificaciones.enviarNotificacion(
                     'Contador Reiniciado',
@@ -274,7 +301,6 @@ function handleMQTTMessage(topic, data) {
 
     switch (topic) {
         case 'porton/estado':
-            // Actualizar estado visual
             const stateEl = document.getElementById('currentState');
             if (stateEl) {
                 if (data.estado === 'ABIERTO')      stateEl.innerHTML = '✅ ABIERTO';
@@ -287,60 +313,37 @@ function handleMQTTMessage(topic, data) {
             break;
 
         case 'porton/contador/valor':
-            // ✅ CORRECCIÓN CON CONTROL DE DUPLICADOS
             if (data.ciclos !== undefined) {
                 const ciclosRecibidos = data.ciclos;
+                const timestampRecibido = data.hora_actual || Math.floor(Date.now() / 1000);
+                const horaInicio = data.hora_inicio || timestampRecibido;
                 
-                // Evitar procesar el mismo valor repetido
-                if (ciclosRecibidos === ultimoCicloProcesado) {
-                    console.log('⏭️ Ciclo duplicado ignorado:', ciclosRecibidos);
+                // Evitar duplicados por timestamp
+                if (timestampRecibido === ultimoTimestampProcesado && ciclosRecibidos === ultimoCicloProcesado) {
+                    console.log('⏭️ Mensaje duplicado ignorado');
                     return;
                 }
                 
-                // Calcular ciclos nuevos (diferencia)
-                let nuevosCiclos = 0;
-                if (ciclosRecibidos >= ultimoCicloProcesado) {
-                    nuevosCiclos = ciclosRecibidos - ultimoCicloProcesado;
-                } else {
-                    // Reinicio del ESP32 (nuevo día)
-                    nuevosCiclos = ciclosRecibidos;
-                    console.log('🔄 Posible reinicio del ESP32 detectado');
-                }
+                console.log(`📊 Recibido: ${ciclosRecibidos} ciclos (inicio: ${horaInicio})`);
                 
-                if (nuevosCiclos > 0) {
-                    console.log(`📊 +${nuevosCiclos} ciclos nuevos (${ultimoCicloProcesado} → ${ciclosRecibidos})`);
-                }
-
-                // Detectar cambio de día
-                const ultimaFecha = localStorage.getItem('ultima_fecha_contador');
-                if (ultimaFecha && ultimaFecha !== hoy) {
-                    console.log('🔄 Nuevo día detectado — reiniciando contador local');
-                }
-
-                globalCiclosHoy = ciclosRecibidos;
-                window.globalCiclosHoy = globalCiclosHoy;
-                localStorage.setItem('porton_ciclos_hoy', ciclosRecibidos);
-                localStorage.setItem('ultima_fecha_contador', hoy);
+                // Registrar en Supabase con timestamps
+                registrarCiclosEnSupabase(ciclosRecibidos, horaInicio, timestampRecibido);
                 
-                // Actualizar último ciclo procesado
-                ultimoCicloProcesado = ciclosRecibidos;
-
-                // Registrar en Supabase (actualiza ciclos_diarios y acumulado)
-                registrarCiclosEnSupabase(ciclosRecibidos);
-
+                // Actualizar UI local
                 const todayEl = document.getElementById('todayCycles');
                 if (todayEl) todayEl.textContent = ciclosRecibidos;
-
-                // Actualizar total acumulado si cambió
-                const totalEl = document.getElementById('totalCycles');
-                if (totalEl && globalTotalAcumulado > 0) {
-                    totalEl.textContent = globalTotalAcumulado;
-                }
+                
+                // Guardar último procesado
+                ultimoCicloProcesado = ciclosRecibidos;
+                ultimoTimestampProcesado = timestampRecibido;
+                localStorage.setItem('porton_ciclos_hoy', ciclosRecibidos);
+                localStorage.setItem('ultima_fecha_contador', hoy);
 
                 if (typeof registro !== 'undefined') {
                     registro.agregarEvento('CONTADOR', { 
                         ciclosHoy: ciclosRecibidos,
-                        nuevos: nuevosCiclos,
+                        horaInicio: horaInicio,
+                        timestamp: timestampRecibido,
                         totalAcumulado: globalTotalAcumulado
                     });
                 }
@@ -353,13 +356,14 @@ function handleMQTTMessage(topic, data) {
     }
 
     if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
-    if (typeof actualizarGraficos     === 'function') actualizarGraficos();
+    if (typeof actualizarGraficos === 'function') actualizarGraficos();
 }
 
 // ============================================================
 // FUNCIONES GLOBALES EXPORTADAS
 // ============================================================
 window.leerResumenSupabase = leerResumenSupabase;
+window.obtenerEstadoActualParaESP32 = obtenerEstadoActualParaESP32;
 window.resetearContadorSupabase = resetearContadorSupabase;
 window.guardarMantenimientoSupabase = guardarMantenimientoSupabase;
 window.leerHistorialDiario = leerHistorialDiario;
@@ -371,7 +375,6 @@ window.leerMantenimientosSupabase = leerMantenimientosSupabase;
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('🚀 Inicializando SmartGate Monitor...');
     
-    // Cargar datos locales como respaldo inmediato
     const localHoy = localStorage.getItem('porton_ciclos_hoy');
     if (localHoy) {
         globalCiclosHoy = parseInt(localHoy);
@@ -388,17 +391,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (totalEl) totalEl.textContent = globalTotalAcumulado;
     }
 
-    // Conectar MQTT
     connectMQTT();
-
-    // Leer Supabase al arrancar
     await leerResumenSupabase();
-    
-    // Leer historial diario y mantenimientos en segundo plano
     leerHistorialDiario(30);
     leerMantenimientosSupabase(20);
     
-    // Sincronizar cada 30 segundos
     setInterval(leerResumenSupabase, 30000);
     
     console.log('✅ SmartGate Monitor inicializado correctamente');
