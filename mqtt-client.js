@@ -1,8 +1,9 @@
 // ============================================================
-// CONFIGURACIÓN MQTT - CON SINCRONIZACIÓN CON SUPABASE
+// SMARTGATE - CONFIGURACIÓN MQTT CON SUPABASE (NUEVA VERSIÓN)
 // ============================================================
 
 let globalCiclosHoy = 0;
+let globalTotalAcumulado = 0;
 
 const MQTT_CONFIG = {
     broker: 'wss://d21941469193416fabcba46336fd0980.s1.eu.hivemq.cloud:8884/mqtt',
@@ -25,101 +26,151 @@ const MQTT_CONFIG = {
 
 let mqttClient;
 let lastHeartbeat = null;
+let ultimoCicloGuardado = 0;
 
 // ============================================================
-// SUPABASE - LECTURA DEL TOTAL GLOBAL (usando ID)
+// SUPABASE - CREDENCIALES
 // ============================================================
 const SUPABASE_URL = 'https://zdwonipaqrixxgfhxjjt.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_hAfw0kf-IxPbIzd9y3nThw_nwoDZf-P';
 
-async function leerTotalDesdeSupabase() {
+// ============================================================
+// FUNCIÓN: Obtener resumen completo desde Supabase
+// ============================================================
+async function obtenerResumenSupabase() {
     try {
-        // Consultar el ID más alto (último registro)
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/ciclos?select=id&order=id.desc&limit=1`, {
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/obtener_resumen`, {
+            method: 'POST',
             headers: {
                 'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json'
             }
         });
         
         const data = await response.json();
-        // El total acumulado es el ID del último registro
-        const totalAcumulado = data[0]?.id || 0;
         
-        console.log('📊 Total acumulado (por ID):', totalAcumulado);
+        console.log('📊 Resumen desde Supabase:', data);
         
+        // Actualizar variables globales
+        globalTotalAcumulado = data.total_acumulado || 0;
+        globalCiclosHoy = data.ciclos_hoy || 0;
+        
+        // Actualizar mantenimiento
         if (typeof mantenimiento !== 'undefined') {
-            mantenimiento.ciclos.total = totalAcumulado;
+            mantenimiento.ciclos.total = globalTotalAcumulado;
             mantenimiento.guardarCiclos();
-            if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
-            if (typeof actualizarGraficos === 'function') actualizarGraficos();
         }
         
+        // Actualizar UI
         const totalSpan = document.getElementById('totalCycles');
-        if (totalSpan) totalSpan.textContent = totalAcumulado;
+        if (totalSpan) totalSpan.textContent = globalTotalAcumulado;
+        
+        const todaySpan = document.getElementById('todayCycles');
+        if (todaySpan) todaySpan.textContent = globalCiclosHoy;
+        
+        if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
+        if (typeof actualizarGraficos === 'function') actualizarGraficos();
+        
+        // Datos para gráficos (últimos 30 días)
+        if (data.ultimos_dias && data.ultimos_dias.length > 0) {
+            console.log(`📈 Datos de gráficos: ${data.ultimos_dias.length} días`);
+            // Aquí podrías actualizar el gráfico directamente
+        }
+        
+        return data;
         
     } catch (error) {
-        console.log('⚠️ Error leyendo desde Supabase:', error);
+        console.log('⚠️ Error obteniendo resumen de Supabase:', error);
+        return null;
     }
 }
 
 // ============================================================
-// CARGAR DATOS GUARDADOS LOCALMENTE (respaldo)
+// FUNCIÓN: Registrar ciclos del ESP32 en Supabase
+// ============================================================
+async function registrarCiclosEnSupabase(ciclosHoy, fecha = null) {
+    try {
+        const body = {
+            p_ciclos_hoy: ciclosHoy
+        };
+        if (fecha) body.p_fecha = fecha;
+        
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/registrar_ciclos_esp32`, {
+            method: 'POST',
+            headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+        
+        const data = await response.json();
+        
+        if (data.exito) {
+            console.log('✅ Ciclos registrados en Supabase:', data);
+            // Actualizar variables globales con los valores devueltos
+            globalTotalAcumulado = data.total_acumulado;
+            globalCiclosHoy = data.ciclos_hoy;
+            
+            if (typeof mantenimiento !== 'undefined') {
+                mantenimiento.ciclos.total = globalTotalAcumulado;
+                mantenimiento.guardarCiclos();
+            }
+            
+            // Actualizar UI
+            const totalSpan = document.getElementById('totalCycles');
+            if (totalSpan) totalSpan.textContent = globalTotalAcumulado;
+            
+            const todaySpan = document.getElementById('todayCycles');
+            if (todaySpan) todaySpan.textContent = globalCiclosHoy;
+            
+            if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
+            if (typeof actualizarGraficos === 'function') actualizarGraficos();
+        }
+        
+        return data;
+        
+    } catch (error) {
+        console.log('⚠️ Error registrando ciclos en Supabase:', error);
+        return null;
+    }
+}
+
+// ============================================================
+// CARGAR DATOS LOCALES (RESPALDO)
 // ============================================================
 function cargarDatosLocales() {
+    const guardadoTotal = localStorage.getItem('porton_total_acumulado');
+    if (guardadoTotal) {
+        globalTotalAcumulado = parseInt(guardadoTotal);
+        console.log(`📀 Total local: ${globalTotalAcumulado} ciclos (respaldo)`);
+    }
+    
     const guardadoCiclosHoy = localStorage.getItem('porton_ciclos_hoy');
     if (guardadoCiclosHoy) {
         globalCiclosHoy = parseInt(guardadoCiclosHoy);
     }
     
-    const todayCyclesSpan = document.getElementById('todayCycles');
-    if (todayCyclesSpan) {
-        todayCyclesSpan.textContent = globalCiclosHoy;
-    }
+    const totalSpan = document.getElementById('totalCycles');
+    if (totalSpan && globalTotalAcumulado > 0) totalSpan.textContent = globalTotalAcumulado;
+    
+    const todaySpan = document.getElementById('todayCycles');
+    if (todaySpan && globalCiclosHoy > 0) todaySpan.textContent = globalCiclosHoy;
 }
 
 function guardarCiclosHoy(ciclos) {
     localStorage.setItem('porton_ciclos_hoy', ciclos.toString());
 }
 
-function detectarCambioDeDia() {
-    const ultimaFecha = localStorage.getItem('ultima_fecha_contador');
-    const hoy = new Date().toISOString().split('T')[0];
-    
-    if (ultimaFecha && ultimaFecha !== hoy) {
-        console.log(`🔄 Cambio de día detectado: ${ultimaFecha} → ${hoy}`);
-        globalCiclosHoy = 0;
-        guardarCiclosHoy(0);
-        localStorage.setItem('ultima_fecha_contador', hoy);
-        return true;
-    }
-    return false;
+function guardarTotalAcumulado(total) {
+    localStorage.setItem('porton_total_acumulado', total.toString());
 }
 
-function guardarCicloDiario(fecha, ciclos) {
-    let historialDiario = JSON.parse(localStorage.getItem('historial_diario') || '[]');
-    const index = historialDiario.findIndex(item => item.fecha === fecha);
-    
-    if (index !== -1) {
-        historialDiario[index].ciclos = ciclos;
-        historialDiario[index].timestamp = new Date().toISOString();
-    } else {
-        historialDiario.push({
-            fecha: fecha,
-            ciclos: ciclos,
-            timestamp: new Date().toISOString()
-        });
-    }
-    
-    historialDiario.sort((a, b) => a.fecha.localeCompare(b.fecha));
-    
-    if (historialDiario.length > 365) {
-        historialDiario = historialDiario.slice(-365);
-    }
-    
-    localStorage.setItem('historial_diario', JSON.stringify(historialDiario));
-}
-
+// ============================================================
+// MQTT CONEXIÓN
+// ============================================================
 function connectMQTT() {
     console.log('🔌 Conectando a MQTT broker...');
     
@@ -184,6 +235,9 @@ function updateMQTTStatus(connected) {
     }
 }
 
+// ============================================================
+// PROCESAR MENSAJES MQTT
+// ============================================================
 function handleMQTTMessage(topic, data) {
     const ahora = new Date();
     const hoy = ahora.toISOString().split('T')[0];
@@ -201,7 +255,6 @@ function handleMQTTMessage(topic, data) {
                 } else {
                     stateSpan.innerHTML = '⚠️ ' + data.estado;
                 }
-                console.log(`✅ Estado actualizado a: ${data.estado}`);
             }
             
             const lastUpdateSpan = document.getElementById('lastUpdate');
@@ -228,27 +281,27 @@ function handleMQTTMessage(topic, data) {
             const ciclosHoyRecibidos = data.ciclos;
             
             if (ciclosHoyRecibidos !== undefined) {
+                console.log(`📊 ESP32 envía: ${ciclosHoyRecibidos} ciclos hoy`);
+                
                 // Detectar cambio de día
                 const ultimaFecha = localStorage.getItem('ultima_fecha_contador');
                 if (ultimaFecha && ultimaFecha !== hoy) {
-                    console.log(`🔄 Cambio de día: ${ultimaFecha} → ${hoy}`);
-                    globalCiclosHoy = 0;
+                    console.log(`🔄 Cambio de día detectado: ${ultimaFecha} → ${hoy}`);
                 }
                 
-                // Actualizar ciclos del día
+                // Guardar en localStorage (respaldo)
                 globalCiclosHoy = ciclosHoyRecibidos;
                 guardarCiclosHoy(globalCiclosHoy);
                 localStorage.setItem('ultima_fecha_contador', hoy);
                 
-                console.log(`📅 Ciclos hoy: ${globalCiclosHoy}`);
+                // ACTUALIZAR SUPABASE (LO MÁS IMPORTANTE)
+                registrarCiclosEnSupabase(ciclosHoyRecibidos, hoy);
                 
+                // Actualizar UI localmente
                 const todayCyclesSpan = document.getElementById('todayCycles');
                 if (todayCyclesSpan) {
-                    todayCyclesSpan.textContent = globalCiclosHoy;
+                    todayCyclesSpan.textContent = ciclosHoyRecibidos;
                 }
-                
-                // Guardar para reporte diario (al final del día)
-                guardarCicloDiario(hoy, globalCiclosHoy);
                 
                 if (typeof registro !== 'undefined') {
                     registro.agregarEvento('CONTADOR', { 
@@ -270,9 +323,18 @@ function handleMQTTMessage(topic, data) {
 // ============================================================
 // INICIALIZACIÓN
 // ============================================================
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    console.log('🚀 Inicializando SmartGate Monitor...');
+    
+    // 1. Cargar datos locales como respaldo
     cargarDatosLocales();
+    
+    // 2. Obtener resumen desde Supabase (fuente de verdad)
+    await obtenerResumenSupabase();
+    
+    // 3. Conectar MQTT
     connectMQTT();
-    leerTotalDesdeSupabase();
-    setInterval(leerTotalDesdeSupabase, 10000);
+    
+    // 4. Actualizar cada 10 segundos
+    setInterval(obtenerResumenSupabase, 10000);
 });
