@@ -5,12 +5,6 @@
 
 let globalCiclosHoy = 0;
 let globalTotalAcumulado = 0;
-let ultimoCicloProcesado = 0;
-let ultimoTimestampProcesado = 0;
-
-// Exponer variables globales para otros scripts
-window.globalTotalAcumulado = globalTotalAcumulado;
-window.globalCiclosHoy = globalCiclosHoy;
 
 const MQTT_CONFIG = {
     broker: 'wss://d21941469193416fabcba46336fd0980.s1.eu.hivemq.cloud:8884/mqtt',
@@ -49,104 +43,60 @@ function sbHeaders() {
 // ── Leer resumen completo desde la función SQL ──────────────
 async function leerResumenSupabase() {
     try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/obtener_estado_actual_v3`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/obtener_resumen`, {
             method: 'POST',
             headers: sbHeaders(),
             body: '{}'
         });
         const data = await res.json();
 
-        globalTotalAcumulado = data.total_acumulado || 0;
-        globalCiclosHoy = data.ciclos_hoy || 0;
+        globalTotalAcumulado       = data.total_acumulado || 0;
+        globalCiclosHoy            = data.ciclos_hoy      || 0;
 
-        window.globalTotalAcumulado = globalTotalAcumulado;
-        window.globalCiclosHoy = globalCiclosHoy;
+        // Actualizar UI
+        const totalEl  = document.getElementById('totalCycles');
+        const hoyEl    = document.getElementById('todayCycles');
+        const semanaEl = document.getElementById('weekCycles');
+        const mesEl    = document.getElementById('monthCycles');
 
-        const totalEl = document.getElementById('totalCycles');
-        const hoyEl = document.getElementById('todayCycles');
+        if (totalEl)  totalEl.textContent  = globalTotalAcumulado;
+        if (hoyEl)    hoyEl.textContent    = globalCiclosHoy;
+        if (semanaEl) semanaEl.textContent = data.ciclos_semana || 0;
+        if (mesEl)    mesEl.textContent    = data.ciclos_mes    || 0;
 
-        if (totalEl) totalEl.textContent = globalTotalAcumulado;
-        if (hoyEl) hoyEl.textContent = globalCiclosHoy;
-
+        // Actualizar mantenimiento con total real
         if (typeof mantenimiento !== 'undefined') {
             mantenimiento.ciclos.total = globalTotalAcumulado;
+            mantenimiento.ciclos.hoy   = globalCiclosHoy;
             mantenimiento.guardarCiclos();
-            mantenimiento.actualizarSaludSistema();
-            mantenimiento.verificarAlertasMantenimiento();
         }
 
         if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
-        if (typeof actualizarGraficos === 'function') actualizarGraficos();
+        if (typeof actualizarGraficos     === 'function') actualizarGraficos();
 
         console.log('📊 Resumen Supabase:', data);
-        return data;
     } catch (e) {
         console.warn('⚠️ Error leyendo resumen Supabase:', e);
-        return null;
     }
 }
 
-// ── Registrar ciclos con la función V5 (timestamps y reinicios) ──
-async function registrarCiclosEnSupabase(ciclosHoy, horaInicio = null, horaActual = null) {
+// ── Registrar ciclos del día via función SQL ────────────────
+async function registrarCiclosEnSupabase(ciclosHoy) {
     try {
         const hoy = new Date().toISOString().split('T')[0];
-        const ahora = horaActual || Math.floor(Date.now() / 1000);
-        const inicio = horaInicio || ahora;
-        
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/registrar_ciclos_esp32_v5`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/registrar_ciclos_esp32`, {
             method: 'POST',
             headers: sbHeaders(),
-            body: JSON.stringify({ 
-                p_ciclos_recibidos: ciclosHoy,
-                p_hora_inicio: inicio,
-                p_hora_actual: ahora,
-                p_fecha: hoy
-            })
+            body: JSON.stringify({ p_ciclos_hoy: ciclosHoy, p_fecha: hoy })
         });
         const data = await res.json();
-        
-        if (data && data.exito === true) {
+        if (data.exito) {
             globalTotalAcumulado = data.total_acumulado;
-            globalCiclosHoy = data.ciclos_hoy;
-            window.globalTotalAcumulado = globalTotalAcumulado;
-            window.globalCiclosHoy = globalCiclosHoy;
-            
-            console.log(`📊 ${data.mensaje}`);
-            
-            if (data.reinicio_detectado) {
-                console.warn(`⚠️ REINICIO DETECTADO: El ESP32 debe usar ${data.esp32_debe_usar} ciclos`);
-                // Intentar publicar corrección al ESP32
-                if (mqttClient && mqttClient.connected) {
-                    mqttClient.publish('porton/comandos', `AJUSTAR_CONTADOR:${data.esp32_debe_usar}`);
-                }
-            }
-            
-            await leerResumenSupabase();
-            return data;
-        } else {
-            console.warn('⚠️ La función no devolvió exito:', data);
-            return null;
+            console.log('✅ Ciclos registrados:', data);
+            leerResumenSupabase(); // refrescar UI
         }
     } catch (e) {
         console.warn('⚠️ Error registrando ciclos:', e);
-        return null;
-    }
-}
-
-// ── Obtener estado actual para ESP32 ────────────────────────
-async function obtenerEstadoActualParaESP32() {
-    try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/obtener_estado_actual_v3`, {
-            method: 'POST',
-            headers: sbHeaders(),
-            body: '{}'
-        });
-        const data = await res.json();
-        console.log('📡 Estado para ESP32:', data);
-        return data;
-    } catch (e) {
-        console.warn('⚠️ Error obteniendo estado:', e);
-        return null;
     }
 }
 
@@ -158,9 +108,7 @@ async function leerHistorialDiario(dias = 30) {
             `${SUPABASE_URL}/rest/v1/ciclos_diarios?fecha=gte.${desde}&order=fecha.desc`,
             { headers: sbHeaders() }
         );
-        const data = await res.json();
-        console.log(`📅 Historial diario (últimos ${dias} días):`, data.length, 'registros');
-        return data;
+        return await res.json();
     } catch (e) {
         console.warn('⚠️ Error leyendo historial:', e);
         return [];
@@ -169,10 +117,6 @@ async function leerHistorialDiario(dias = 30) {
 
 // ── Resetear contador (manual desde la UI) ──────────────────
 async function resetearContadorSupabase(motivo = 'Reset manual', realizadoPor = 'Operador') {
-    if (!confirm('⚠️ ¿Estás seguro de resetear el contador? Esta acción registrará un evento de mantenimiento.')) {
-        return null;
-    }
-    
     try {
         const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/resetear_contador`, {
             method: 'POST',
@@ -180,25 +124,11 @@ async function resetearContadorSupabase(motivo = 'Reset manual', realizadoPor = 
             body: JSON.stringify({ p_motivo: motivo, p_realizado_por: realizadoPor })
         });
         const data = await res.json();
-        
-        if (data && data.exito) {
+        if (data.exito) {
             console.log('✅ Contador reseteado. Ciclos antes:', data.ciclos_antes);
             globalTotalAcumulado = 0;
-            globalCiclosHoy = 0;
-            window.globalTotalAcumulado = 0;
-            window.globalCiclosHoy = 0;
-            ultimoCicloProcesado = 0;
-            ultimoTimestampProcesado = 0;
-            
-            await leerResumenSupabase();
-            
-            if (typeof notificaciones !== 'undefined') {
-                notificaciones.enviarNotificacion(
-                    'Contador Reiniciado',
-                    `Se reinició el contador. Había ${data.ciclos_antes} ciclos acumulados.`,
-                    'warning'
-                );
-            }
+            globalCiclosHoy      = 0;
+            leerResumenSupabase();
             return data;
         }
     } catch (e) {
@@ -222,14 +152,6 @@ async function guardarMantenimientoSupabase(tipo, notas = '', realizadoPor = 'Op
         });
         const data = await res.json();
         console.log('✅ Mantenimiento guardado en Supabase:', data);
-        
-        if (typeof notificaciones !== 'undefined') {
-            notificaciones.enviarNotificacion(
-                'Mantenimiento Registrado',
-                `${tipo} registrado. Total de ciclos: ${globalTotalAcumulado}`,
-                'info'
-            );
-        }
         return data;
     } catch (e) {
         console.warn('⚠️ Error guardando mantenimiento:', e);
@@ -244,9 +166,7 @@ async function leerMantenimientosSupabase(limite = 50) {
             `${SUPABASE_URL}/rest/v1/mantenimiento_eventos?order=fecha.desc&limit=${limite}`,
             { headers: sbHeaders() }
         );
-        const data = await res.json();
-        console.log(`🔧 Historial de mantenimientos (últimos ${limite}):`, data.length, 'registros');
-        return data;
+        return await res.json();
     } catch (e) {
         console.warn('⚠️ Error leyendo mantenimientos:', e);
         return [];
@@ -266,12 +186,8 @@ function connectMQTT() {
         Object.values(MQTT_CONFIG.topics).forEach(t => mqttClient.subscribe(t, { qos: 1 }));
     });
 
-    mqttClient.on('error', (err) => {
-        console.error('❌ Error MQTT:', err);
-        updateMQTTStatus(false);
-    });
+    mqttClient.on('error', () => updateMQTTStatus(false));
     mqttClient.on('offline', () => updateMQTTStatus(false));
-    mqttClient.on('reconnect', () => console.log('🔄 Reintentando conexión MQTT...'));
 
     mqttClient.on('message', (topic, message) => {
         try {
@@ -301,6 +217,7 @@ function handleMQTTMessage(topic, data) {
 
     switch (topic) {
         case 'porton/estado':
+            // Actualizar estado visual
             const stateEl = document.getElementById('currentState');
             if (stateEl) {
                 if (data.estado === 'ABIERTO')      stateEl.innerHTML = '✅ ABIERTO';
@@ -313,40 +230,28 @@ function handleMQTTMessage(topic, data) {
             break;
 
         case 'porton/contador/valor':
+            // ✅ CORRECCIÓN PRINCIPAL: registrar en Supabase con la función SQL
             if (data.ciclos !== undefined) {
-                const ciclosRecibidos = data.ciclos;
-                const timestampRecibido = data.hora_actual || Math.floor(Date.now() / 1000);
-                const horaInicio = data.hora_inicio || timestampRecibido;
-                
-                // Evitar duplicados por timestamp
-                if (timestampRecibido === ultimoTimestampProcesado && ciclosRecibidos === ultimoCicloProcesado) {
-                    console.log('⏭️ Mensaje duplicado ignorado');
-                    return;
+                const ciclosNuevos = data.ciclos;
+
+                // Detectar cambio de día
+                const ultimaFecha = localStorage.getItem('ultima_fecha_contador');
+                if (ultimaFecha && ultimaFecha !== hoy) {
+                    console.log('🔄 Nuevo día — ciclos del día anterior ya en Supabase');
                 }
-                
-                console.log(`📊 Recibido: ${ciclosRecibidos} ciclos (inicio: ${horaInicio})`);
-                
-                // Registrar en Supabase con timestamps
-                registrarCiclosEnSupabase(ciclosRecibidos, horaInicio, timestampRecibido);
-                
-                // Actualizar UI local
-                const todayEl = document.getElementById('todayCycles');
-                if (todayEl) todayEl.textContent = ciclosRecibidos;
-                
-                // Guardar último procesado
-                ultimoCicloProcesado = ciclosRecibidos;
-                ultimoTimestampProcesado = timestampRecibido;
-                localStorage.setItem('porton_ciclos_hoy', ciclosRecibidos);
+
+                globalCiclosHoy = ciclosNuevos;
+                localStorage.setItem('porton_ciclos_hoy', ciclosNuevos);
                 localStorage.setItem('ultima_fecha_contador', hoy);
 
-                if (typeof registro !== 'undefined') {
-                    registro.agregarEvento('CONTADOR', { 
-                        ciclosHoy: ciclosRecibidos,
-                        horaInicio: horaInicio,
-                        timestamp: timestampRecibido,
-                        totalAcumulado: globalTotalAcumulado
-                    });
-                }
+                // Registrar en Supabase → actualiza ciclos_diarios y acumulado
+                registrarCiclosEnSupabase(ciclosNuevos);
+
+                const todayEl = document.getElementById('todayCycles');
+                if (todayEl) todayEl.textContent = ciclosNuevos;
+
+                if (typeof registro !== 'undefined')
+                    registro.agregarEvento('CONTADOR', { ciclosHoy: ciclosNuevos });
             }
             break;
 
@@ -356,47 +261,24 @@ function handleMQTTMessage(topic, data) {
     }
 
     if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
-    if (typeof actualizarGraficos === 'function') actualizarGraficos();
+    if (typeof actualizarGraficos     === 'function') actualizarGraficos();
 }
-
-// ============================================================
-// FUNCIONES GLOBALES EXPORTADAS
-// ============================================================
-window.leerResumenSupabase = leerResumenSupabase;
-window.obtenerEstadoActualParaESP32 = obtenerEstadoActualParaESP32;
-window.resetearContadorSupabase = resetearContadorSupabase;
-window.guardarMantenimientoSupabase = guardarMantenimientoSupabase;
-window.leerHistorialDiario = leerHistorialDiario;
-window.leerMantenimientosSupabase = leerMantenimientosSupabase;
 
 // ============================================================
 // INICIALIZACIÓN
 // ============================================================
-document.addEventListener('DOMContentLoaded', async () => {
-    console.log('🚀 Inicializando SmartGate Monitor...');
-    
+document.addEventListener('DOMContentLoaded', () => {
+    // Cargar datos locales como respaldo inmediato
     const localHoy = localStorage.getItem('porton_ciclos_hoy');
     if (localHoy) {
         globalCiclosHoy = parseInt(localHoy);
-        window.globalCiclosHoy = globalCiclosHoy;
         const el = document.getElementById('todayCycles');
         if (el) el.textContent = globalCiclosHoy;
     }
-    
-    const localTotal = localStorage.getItem('porton_total_acumulado');
-    if (localTotal) {
-        globalTotalAcumulado = parseInt(localTotal);
-        window.globalTotalAcumulado = globalTotalAcumulado;
-        const totalEl = document.getElementById('totalCycles');
-        if (totalEl) totalEl.textContent = globalTotalAcumulado;
-    }
 
     connectMQTT();
-    await leerResumenSupabase();
-    leerHistorialDiario(30);
-    leerMantenimientosSupabase(20);
-    
+
+    // Leer Supabase al arrancar y cada 30s
+    leerResumenSupabase();
     setInterval(leerResumenSupabase, 30000);
-    
-    console.log('✅ SmartGate Monitor inicializado correctamente');
 });
