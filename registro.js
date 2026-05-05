@@ -97,13 +97,17 @@ class RegistroEventos {
             tendenciaSpan.style.color = tendencia >= 0 ? '#10b981' : '#ef4444';
         }
         
-        // Ciclos totales (acumulado histórico)
+        // Ciclos totales (prioridad: Supabase > mantenimiento)
         const totalCyclesSpan = document.getElementById('totalCycles');
         if (totalCyclesSpan) {
-            totalCyclesSpan.textContent = mantenimiento.ciclos.total;
+            if (typeof globalTotalAcumulado !== 'undefined' && globalTotalAcumulado > 0) {
+                totalCyclesSpan.textContent = globalTotalAcumulado;
+            } else {
+                totalCyclesSpan.textContent = mantenimiento.ciclos.total;
+            }
         }
         
-        // Ciclos hoy (usando la variable GLOBAL de mqtt-client.js)
+        // Ciclos hoy (prioridad: globalCiclosHoy > mantenimiento)
         const todayCyclesSpan = document.getElementById('todayCycles');
         if (todayCyclesSpan) {
             if (typeof globalCiclosHoy !== 'undefined' && globalCiclosHoy !== null) {
@@ -269,12 +273,24 @@ function resetFilters() {
 }
 
 function actualizarEstadisticas() {
-    document.getElementById('totalCycles').textContent = mantenimiento.ciclos.total;
-    if (typeof globalCiclosHoy !== 'undefined' && globalCiclosHoy !== null) {
-        document.getElementById('todayCycles').textContent = globalCiclosHoy;
-    } else {
-        document.getElementById('todayCycles').textContent = mantenimiento.obtenerCiclosHoy();
+    const totalCyclesSpan = document.getElementById('totalCycles');
+    if (totalCyclesSpan) {
+        if (typeof globalTotalAcumulado !== 'undefined' && globalTotalAcumulado > 0) {
+            totalCyclesSpan.textContent = globalTotalAcumulado;
+        } else {
+            totalCyclesSpan.textContent = mantenimiento.ciclos.total;
+        }
     }
+    
+    const todayCyclesSpan = document.getElementById('todayCycles');
+    if (todayCyclesSpan) {
+        if (typeof globalCiclosHoy !== 'undefined' && globalCiclosHoy !== null) {
+            todayCyclesSpan.textContent = globalCiclosHoy;
+        } else {
+            todayCyclesSpan.textContent = mantenimiento.obtenerCiclosHoy();
+        }
+    }
+    
     mantenimiento.actualizarPredicciones();
 }
 
