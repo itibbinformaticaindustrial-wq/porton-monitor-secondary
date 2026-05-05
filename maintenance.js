@@ -1,4 +1,7 @@
-// Sistema de mantenimiento - CONTADOR DE CICLOS POR FLANCO DE SENSOR
+// ============================================================
+// SMARTGATE - SISTEMA DE MANTENIMIENTO (con Supabase)
+// ============================================================
+
 class SistemaMantenimiento {
     constructor() {
         this.ciclos = this.cargarCiclos();
@@ -18,13 +21,22 @@ class SistemaMantenimiento {
     }
 
     cargarCiclos() {
+        // Primero intentar cargar desde localStorage
         const guardado = localStorage.getItem('porton_ciclos_avanzado');
-        return guardado ? JSON.parse(guardado) : {
+        const datosLocales = guardado ? JSON.parse(guardado) : {
             total: 0,
             historial: [],
             ultimoMantenimiento: null,
             predicciones: {}
         };
+        
+        // Intentar cargar desde Supabase si está disponible
+        if (typeof globalTotalAcumulado !== 'undefined' && globalTotalAcumulado > 0) {
+            datosLocales.total = globalTotalAcumulado;
+            console.log(`📊 Cargando total desde Supabase: ${globalTotalAcumulado}`);
+        }
+        
+        return datosLocales;
     }
 
     cargarHistorialMantenimiento() {
@@ -34,7 +46,7 @@ class SistemaMantenimiento {
 
     guardarCiclos() {
         localStorage.setItem('porton_ciclos_avanzado', JSON.stringify(this.ciclos));
-        console.log(`💾 Ciclos guardados: ${this.ciclos.total}`);
+        console.log(`💾 Ciclos guardados localmente: ${this.ciclos.total}`);
     }
 
     guardarHistorialMantenimiento() {
@@ -50,9 +62,8 @@ class SistemaMantenimiento {
     }
 
     // ============================================================
-    // MÉTODO PRINCIPAL: Procesar sensores con DETECCIÓN DE FLANCO
-    // Ahora solo muestra los sensores, NO cuenta ciclos localmente
-    // El ESP32 es quien cuenta y envía el contador real por MQTT
+    // MÉTODO PRINCIPAL: Procesar sensores (solo monitoreo)
+    // El ESP32 es quien cuenta y envía el contador real
     // ============================================================
     procesarSensores(sensores, timestamp) {
         const abiertoActual = sensores.abierto === true;
@@ -61,7 +72,6 @@ class SistemaMantenimiento {
         const abiertoAnterior = this.estadoAnterior.abierto;
         const cerradoAnterior = this.estadoAnterior.cerrado;
         
-        // Solo mostrar cambios relevantes (no contar ciclos)
         if (abiertoActual !== abiertoAnterior) {
             console.log(`📡 Sensor ABIERTO: ${abiertoAnterior} → ${abiertoActual}`);
         }
@@ -69,11 +79,55 @@ class SistemaMantenimiento {
             console.log(`📡 Sensor CERRADO: ${cerradoAnterior} → ${cerradoActual}`);
         }
         
-        // Actualizar estado anterior para la próxima comparación
         this.estadoAnterior = {
             abierto: abiertoActual,
             cerrado: cerradoActual
         };
+    }
+
+    // ============================================================
+    // ACTUALIZAR TOTAL DESDE SUPABASE (llamado externamente)
+    // ============================================================
+    actualizarTotalDesdeSupabase(nuevoTotal) {
+        if (nuevoTotal > this.ciclos.total) {
+            this.ciclos.total = nuevoTotal;
+            this.guardarCiclos();
+            this.verificarAlertasMantenimiento();
+            this.actualizarPredicciones();
+            this.actualizarSaludSistema();
+            console.log(`🌍 Total actualizado desde Supabase: ${nuevoTotal} ciclos`);
+            return true;
+        }
+        return false;
+    }
+
+    // ============================================================
+    // ACTUALIZAR CICLOS HOY (llamado externamente)
+    // ============================================================
+    actualizarCiclosHoy(ciclosHoy) {
+        // Actualizar el historial para que obtenerCiclosHoy() funcione
+        const hoy = new Date().toISOString().split('T')[0];
+        const indexHoy = this.ciclos.historial.findIndex(c => c.fecha === hoy);
+        
+        if (indexHoy !== -1) {
+            this.ciclos.historial[indexHoy].numero = ciclosHoy;
+            this.ciclos.historial[indexHoy].timestamp = new Date().toISOString();
+        } else {
+            this.ciclos.historial.unshift({
+                numero: ciclosHoy,
+                timestamp: new Date().toISOString(),
+                fecha: hoy,
+                hora: new Date().getHours()
+            });
+        }
+        
+        // Mantener solo los últimos 365 días
+        if (this.ciclos.historial.length > 365) {
+            this.ciclos.historial = this.ciclos.historial.slice(0, 365);
+        }
+        
+        this.guardarCiclos();
+        console.log(`📅 Ciclos hoy actualizados: ${ciclosHoy}`);
     }
 
     actualizarSaludSistema() {
@@ -297,6 +351,9 @@ class SistemaMantenimiento {
         }
     }
 
+    // ============================================================
+    // MÉTODOS PARA GRÁFICOS Y ESTADÍSTICAS
+    // ============================================================
     obtenerCiclosPorDia(dias = 7) {
         const diario = {};
         const hoy = new Date();
@@ -337,7 +394,8 @@ class SistemaMantenimiento {
 
     obtenerCiclosHoy() {
         const hoy = new Date().toISOString().split('T')[0];
-        return this.ciclos.historial.filter(ciclo => ciclo.fecha === hoy).length;
+        const cicloHoy = this.ciclos.historial.find(c => c.fecha === hoy);
+        return cicloHoy ? cicloHoy.numero : 0;
     }
 
     obtenerTendenciaSemanal() {
@@ -345,53 +403,12 @@ class SistemaMantenimiento {
         const ayer = new Date();
         ayer.setDate(ayer.getDate() - 1);
         const ayerStr = ayer.toISOString().split('T')[0];
-        const ciclosAyer = this.ciclos.historial.filter(c => c.fecha === ayerStr).length;
-        return hoy - ciclosAyer;
+        const ciclosAyer = this.ciclos.historial.find(c => c.fecha === ayerStr);
+        return hoy - (ciclosAyer ? ciclosAyer.numero : 0);
     }
 }
 
 // ============================================================
-// ALMACENAR CICLOS POR DÍA (para reportes)
+// INICIALIZACIÓN
 // ============================================================
-
-function guardarCicloDiario() {
-    const hoy = new Date().toISOString().split('T')[0];
-    const ciclosHoy = mantenimiento.ciclos.total;
-    
-    let historialDiario = JSON.parse(localStorage.getItem('historial_diario') || '[]');
-    
-    const index = historialDiario.findIndex(item => item.fecha === hoy);
-    
-    if (index !== -1) {
-        historialDiario[index].ciclos = ciclosHoy;
-        historialDiario[index].timestamp = new Date().toISOString();
-    } else {
-        historialDiario.push({
-            fecha: hoy,
-            ciclos: ciclosHoy,
-            timestamp: new Date().toISOString()
-        });
-    }
-    
-    if (historialDiario.length > 365) {
-        historialDiario = historialDiario.slice(-365);
-    }
-    
-    localStorage.setItem('historial_diario', JSON.stringify(historialDiario));
-    console.log(`💾 Ciclo diario guardado: ${hoy} → ${ciclosHoy} ciclos`);
-}
-
-function programarGuardadoDiario() {
-    const ahora = new Date();
-    const msHastaMedianoche = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + 1) - ahora;
-    
-    setTimeout(() => {
-        guardarCicloDiario();
-        setInterval(guardarCicloDiario, 24 * 60 * 60 * 1000);
-    }, msHastaMedianoche);
-}
-
-// Iniciar guardado diario al cargar (sin HTTP)
-programarGuardadoDiario();
-
 const mantenimiento = new SistemaMantenimiento();
