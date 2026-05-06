@@ -1,21 +1,22 @@
 // ============================================================
-// SMARTGATE - GENERADOR DE PDF (VERSIÓN COMPLETA)
-// Con: resumen ejecutivo, comparativa semanal, gráfico de salud, marca de agua
+// SMARTGATE - GENERADOR DE PDF (VERSIÓN FINAL)
+// Con: marca de agua con logo + texto "Informatica Industrial"
+// Espacios optimizados y texto completo
 // ============================================================
 
 class GeneradorPDF {
     constructor() {
-        console.log('📄 Inicializando GeneradorPDF Mejorado...');
+        console.log('📄 Inicializando GeneradorPDF Final...');
         this.libreriasCargadas = false;
         
+        // Márgenes más pequeños para aprovechar mejor la página
         this.margen = {
-            superior: 25,
-            inferior: 25,
-            izquierdo: 20,
-            derecho: 20
+            superior: 20,
+            inferior: 20,
+            izquierdo: 15,
+            derecho: 15
         };
         
-        // URLs de logos
         this.urlsLogos = {
             instituto: window.location.origin + '/porton-monitor-secondary/img/logo-instituto.png',
             carrera: window.location.origin + '/porton-monitor-secondary/img/logo-carrera.webp'
@@ -64,17 +65,13 @@ class GeneradorPDF {
             return null;
         }
         try {
-            // Mejorar calidad del gráfico
             await new Promise(r => setTimeout(r, 200));
-            
-            // Crear canvas temporal con mayor resolución
             const tempCanvas = document.createElement('canvas');
             const ctx = tempCanvas.getContext('2d');
             tempCanvas.width = canvas.width * escala;
             tempCanvas.height = canvas.height * escala;
             ctx.scale(escala, escala);
             ctx.drawImage(canvas, 0, 0);
-            
             return tempCanvas.toDataURL('image/png', 1.0);
         } catch (e) {
             return null;
@@ -98,29 +95,54 @@ class GeneradorPDF {
         });
     }
 
+    // ============================================================
+    // MARCA DE AGUA CON LOGO DE CARRERA Y TEXTO
+    // ============================================================
     async agregarMarcaDeAgua(doc) {
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();
         
-        doc.setFontSize(50);
-        doc.setTextColor(200, 200, 200);
-        doc.setFont('helvetica', 'italic');
+        // Cargar logo de carrera para marca de agua
+        let logoData = null;
+        try {
+            if (this.logosCache.carrera) {
+                logoData = this.logosCache.carrera;
+            } else {
+                logoData = await this.cargarImagenDesdeURL(this.urlsLogos.carrera);
+            }
+        } catch(e) {
+            console.log('Logo para marca de agua no disponible');
+        }
         
-        // Texto de marca de agua en diagonal
-        const texto = 'Ingenieria Informatica';
+        if (logoData) {
+            try {
+                // Logo grande en el centro (60mm x 60mm)
+                const logoWidth = 55;
+                const logoHeight = 55;
+                const x = (pageWidth - logoWidth) / 2;
+                const y = (pageHeight - logoHeight) / 2 - 20;
+                
+                doc.saveGraphicsState();
+                doc.setGState(new doc.GState({ opacity: 0.12 }));
+                doc.addImage(logoData, 'PNG', x, y, logoWidth, logoHeight);
+                doc.restoreGraphicsState();
+            } catch(e) {}
+        }
+        
+        // Texto "Informatica Industrial" debajo del logo
         doc.saveGraphicsState();
-        doc.setGState(new doc.GState({ opacity: 0.15 }));
-        doc.text(texto, pageWidth / 2, pageHeight / 2, { 
-            align: 'center', 
-            angle: 45 
-        });
+        doc.setGState(new doc.GState({ opacity: 0.12 }));
+        doc.setFontSize(20);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(100, 100, 100);
+        doc.text('INFORMATICA INDUSTRIAL', pageWidth / 2, (pageHeight / 2) + 50, { align: 'center' });
         doc.restoreGraphicsState();
     }
 
     async agregarEncabezadoConLogos(doc) {
         const pageWidth = doc.internal.pageSize.getWidth();
-        const logoWidth = 22;
-        const logoHeight = 22;
+        const logoWidth = 20;
+        const logoHeight = 20;
         const x = this.margen.izquierdo;
         
         // Logo izquierdo
@@ -135,25 +157,24 @@ class GeneradorPDF {
         
         if (logoInstitutoData) {
             try {
-                doc.addImage(logoInstitutoData, 'PNG', x, 10, logoWidth, logoHeight);
+                doc.addImage(logoInstitutoData, 'PNG', x, 8, logoWidth, logoHeight);
             } catch(e) {
-                this.dibujarTextoInstituto(doc, x, 20);
+                this.dibujarTextoInstituto(doc, x, 15);
             }
         } else {
-            this.dibujarTextoInstituto(doc, x, 20);
+            this.dibujarTextoInstituto(doc, x, 15);
         }
         
         // Título
-        doc.setFontSize(18);
+        doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
-        doc.text('SMARTGATE MONITOR', pageWidth / 2, 18, { align: 'center' });
+        doc.text('SMARTGATE MONITOR', pageWidth / 2, 15, { align: 'center' });
         
-        doc.setFontSize(10);
+        doc.setFontSize(9);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(80, 80, 80);
-        doc.text('Sistema Predictivo de Mantenimiento', pageWidth / 2, 26, { align: 'center' });
-        doc.text('Porton Automatico', pageWidth / 2, 32, { align: 'center' });
+        doc.text('Sistema Predictivo de Mantenimiento | Porton Automatico', pageWidth / 2, 23, { align: 'center' });
         
         // Logo derecho
         let logoCarreraData = null;
@@ -167,50 +188,48 @@ class GeneradorPDF {
         
         if (logoCarreraData) {
             try {
-                doc.addImage(logoCarreraData, 'PNG', pageWidth - this.margen.derecho - logoWidth, 10, logoWidth, logoHeight);
+                doc.addImage(logoCarreraData, 'PNG', pageWidth - this.margen.derecho - logoWidth, 8, logoWidth, logoHeight);
             } catch(e) {
-                this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 20);
+                this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 15);
             }
         } else {
-            this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 20);
+            this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 15);
         }
         
-        // Línea
+        // Línea separadora
         doc.setDrawColor(200, 200, 200);
-        doc.line(x, 42, pageWidth - this.margen.derecho, 42);
+        doc.line(x, 35, pageWidth - this.margen.derecho, 35);
         
         // Fecha
-        doc.setFontSize(9);
+        doc.setFontSize(8);
         doc.setTextColor(120, 120, 120);
         const fechaActual = new Date().toLocaleDateString('es-ES', {
             weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
         });
-        doc.text(fechaActual, pageWidth - this.margen.derecho - 5, 52, { align: 'right' });
+        doc.text(fechaActual, pageWidth - this.margen.derecho, 45, { align: 'right' });
         
-        return 58;
+        return 50;
     }
 
     dibujarTextoInstituto(doc, x, y) {
-        doc.setFontSize(7);
+        doc.setFontSize(6);
         doc.setTextColor(100);
         doc.text('Instituto Tecnologico', x, y);
-        doc.text('Industrial Brasil Bolivia', x, y + 4);
+        doc.text('Industrial Brasil Bolivia', x, y + 3);
     }
 
     dibujarTextoUniversidad(doc, x, y) {
-        doc.setFontSize(7);
+        doc.setFontSize(6);
         doc.setTextColor(100);
         doc.text('Ingenieria', x + 5, y);
-        doc.text('Informatica', x + 5, y + 4);
+        doc.text('Informatica', x + 5, y + 3);
     }
 
-    // NUEVO: Resumen ejecutivo
     async agregarResumenEjecutivo(doc, y) {
         const x = this.margen.izquierdo;
         const total = typeof globalTotalAcumulado !== 'undefined' ? globalTotalAcumulado : 0;
         const hoy = typeof globalCiclosHoy !== 'undefined' ? globalCiclosHoy : 0;
         
-        // Calcular promedio diario de la semana
         let promedioSemanal = 0;
         if (typeof mantenimiento !== 'undefined') {
             const ciclosSemana = mantenimiento.obtenerCiclosPorDia(7);
@@ -218,29 +237,25 @@ class GeneradorPDF {
             promedioSemanal = Math.round(totalSemana / 7);
         }
         
-        doc.setFontSize(12);
+        doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
         doc.text('RESUMEN EJECUTIVO', x, y);
-        y += 8;
+        y += 7;
         
-        doc.setFontSize(10);
+        doc.setFontSize(9);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(60, 60, 60);
         
-        const resumen = `Durante el dia de hoy, el porton ha registrado ${hoy} ciclos de apertura/cierre. 
-Acumula un total de ${total} ciclos desde su puesta en marcha. 
-El promedio diario de la ultima semana es de ${promedioSemanal} ciclos por dia.`;
+        const resumen = `Durante el dia de hoy, el porton ha registrado ${hoy} ciclos de apertura/cierre. Acumula un total de ${total} ciclos desde su puesta en marcha. El promedio diario de la ultima semana es de ${promedioSemanal} ciclos por dia.`;
         
-        // Dividir texto en líneas
         const lineas = doc.splitTextToSize(resumen, 170);
         doc.text(lineas, x + 5, y);
-        y += (lineas.length * 6) + 10;
+        y += (lineas.length * 5) + 8;
         
         return y;
     }
 
-    // NUEVO: Comparativa con semana anterior
     async agregarComparativaSemanal(doc, y) {
         const x = this.margen.izquierdo;
         
@@ -249,11 +264,9 @@ El promedio diario de la ultima semana es de ${promedioSemanal} ciclos por dia.`
         
         if (typeof mantenimiento !== 'undefined') {
             const ciclos = mantenimiento.obtenerCiclosPorDia(14);
-            // Semana actual (últimos 7 días)
             for (let i = 0; i < 7 && i < ciclos.length; i++) {
                 semanaActual += ciclos[i][1];
             }
-            // Semana anterior (días 7-14)
             for (let i = 7; i < 14 && i < ciclos.length; i++) {
                 semanaAnterior += ciclos[i][1];
             }
@@ -263,83 +276,76 @@ El promedio diario de la ultima semana es de ${promedioSemanal} ciclos por dia.`
         const tendencia = variacion >= 0 ? '+' : '';
         const color = variacion >= 0 ? [16, 185, 129] : [220, 38, 38];
         
-        doc.setFontSize(11);
+        doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
         doc.text('COMPARATIVA SEMANAL', x, y);
-        y += 8;
+        y += 7;
         
-        doc.setFontSize(10);
+        doc.setFontSize(9);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(60, 60, 60);
         doc.text(`Semana actual: ${semanaActual} ciclos`, x + 5, y);
-        doc.text(`Semana anterior: ${semanaAnterior} ciclos`, x + 5, y + 7);
+        doc.text(`Semana anterior: ${semanaAnterior} ciclos`, x + 5, y + 6);
         
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(color[0], color[1], color[2]);
-        doc.text(`Variacion: ${tendencia}${variacion}%`, x + 5, y + 14);
+        doc.text(`Variacion: ${tendencia}${variacion}%`, x + 5, y + 12);
         
-        return y + 28;
+        return y + 24;
     }
 
-    // NUEVO: Gráfico de salud (doughnut)
     async agregarGraficoSalud(doc, y) {
         const x = this.margen.izquierdo;
         const salud = parseInt(document.getElementById('healthPercent')?.textContent || '100');
         
-        // Crear canvas temporal para el gráfico de salud
         const canvas = document.createElement('canvas');
-        canvas.width = 200;
-        canvas.height = 200;
+        canvas.width = 150;
+        canvas.height = 150;
         const ctx = canvas.getContext('2d');
         
-        // Dibujar gráfico circular
         const angulo = (salud / 100) * 2 * Math.PI;
-        const centroX = 100, centroY = 100, radio = 70;
+        const centroX = 75, centroY = 75, radio = 55;
         
-        // Fondo gris
         ctx.beginPath();
         ctx.arc(centroX, centroY, radio, 0, 2 * Math.PI);
         ctx.fillStyle = '#e2e8f0';
         ctx.fill();
         
-        // Sector de salud (color según valor)
         ctx.beginPath();
         ctx.arc(centroX, centroY, radio, -Math.PI / 2, -Math.PI / 2 + angulo);
         ctx.lineTo(centroX, centroY);
         ctx.fillStyle = salud > 70 ? '#10b981' : (salud > 40 ? '#f59e0b' : '#ef4444');
         ctx.fill();
         
-        // Texto central
-        ctx.font = 'bold 24px Arial';
+        ctx.font = 'bold 20px Arial';
         ctx.fillStyle = '#1e293b';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(`${salud}%`, centroX, centroY);
         
-        ctx.font = '12px Arial';
+        ctx.font = '10px Arial';
         ctx.fillStyle = '#64748b';
-        ctx.fillText('Salud del Sistema', centroX, centroY + 30);
+        ctx.fillText('Salud del Sistema', centroX, centroY + 28);
         
         const dataUrl = canvas.toDataURL('image/png');
         
-        doc.setFontSize(11);
+        doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
         doc.text('ESTADO DE SALUD', x, y);
         y += 5;
         
-        doc.addImage(dataUrl, 'PNG', x + 30, y, 40, 40);
+        doc.addImage(dataUrl, 'PNG', x + 30, y, 35, 35);
         
-        return y + 50;
+        return y + 42;
     }
 
-    // NUEVO: Predicción con fecha estimada
     async agregarPrediccionConFecha(doc, y) {
         const x = this.margen.izquierdo;
         const total = typeof globalTotalAcumulado !== 'undefined' ? globalTotalAcumulado : 0;
         
-        let ciclosPorDia = 10; // valor por defecto
+        let ciclosPorDia = 10;
         if (typeof mantenimiento !== 'undefined') {
             const ciclosSemana = mantenimiento.obtenerCiclosPorDia(7);
             const totalSemana = ciclosSemana.reduce((sum, d) => sum + d[1], 0);
@@ -356,18 +362,18 @@ El promedio diario de la ultima semana es de ${promedioSemanal} ciclos por dia.`
             year: 'numeric', month: 'long', day: 'numeric'
         });
         
-        doc.setFontSize(11);
+        doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
         doc.text('PREDICCION DE MANTENIMIENTO', x, y);
-        y += 8;
+        y += 7;
         
-        doc.setFontSize(10);
+        doc.setFontSize(9);
         doc.setFont('helvetica', 'normal');
         doc.setTextColor(60, 60, 60);
-        doc.text(`Proximo mantenimiento preventivo en: ${ciclosRestantes} ciclos`, x + 5, y);
-        doc.text(`Fecha estimada: ${fechaStr}`, x + 5, y + 7);
-        doc.text(`(Basado en promedio de ${ciclosPorDia} ciclos/dia)`, x + 5, y + 14);
+        doc.text(`Proximo mantenimiento: ${ciclosRestantes} ciclos`, x + 5, y);
+        doc.text(`Fecha estimada: ${fechaStr}`, x + 5, y + 6);
+        doc.text(`(Promedio: ${ciclosPorDia} ciclos/dia)`, x + 5, y + 12);
         
         let mensaje = '';
         let color = [16, 185, 129];
@@ -380,20 +386,17 @@ El promedio diario de la ultima semana es de ${promedioSemanal} ciclos por dia.`
         } else if (total > 2000) {
             mensaje = 'Mantenimiento regular recomendado';
             color = [59, 130, 246];
-        } else if (total > 1000) {
-            mensaje = 'Sistema funcionando correctamente';
-            color = [16, 185, 129];
         } else {
             mensaje = 'Sistema en excelente estado';
             color = [16, 185, 129];
         }
         
-        y += 25;
+        y += 22;
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(color[0], color[1], color[2]);
         doc.text(mensaje, x + 5, y);
         
-        return y + 20;
+        return y + 15;
     }
 
     async generarReportePDF(tipo = 'completo') {
@@ -408,7 +411,6 @@ El promedio diario de la ultima semana es de ${promedioSemanal} ciclos por dia.`
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
             
-            // Capturar gráficos con mejor calidad
             const graficoDiario = await this.capturarGrafico('dailyChart', 2);
             const graficoHorario = await this.capturarGrafico('hourlyChart', 2);
             const graficoTendencia = await this.capturarGrafico('trendChart', 2);
@@ -452,23 +454,23 @@ El promedio diario de la ultima semana es de ${promedioSemanal} ciclos por dia.`
     async agregarGrafico(doc, y, grafico, titulo) {
         const x = this.margen.izquierdo;
         
-        doc.setFontSize(12);
+        doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
         doc.text(titulo, x, y);
-        y += 8;
+        y += 7;
         
         if (grafico) {
             try {
-                doc.addImage(grafico, 'PNG', x, y, 160, 70);
-                y += 80;
+                doc.addImage(grafico, 'PNG', x, y, 170, 65);
+                y += 75;
             } catch(e) {
                 doc.text('Grafico no disponible', x + 5, y);
-                y += 15;
+                y += 10;
             }
         } else {
             doc.text('No hay datos suficientes', x + 5, y);
-            y += 15;
+            y += 10;
         }
         
         return y;
@@ -477,73 +479,73 @@ El promedio diario de la ultima semana es de ${promedioSemanal} ciclos por dia.`
     async agregarTablaMantenimiento(doc, y) {
         const x = this.margen.izquierdo;
         
-        doc.setFontSize(12);
+        doc.setFontSize(11);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
         doc.text('MANTENIMIENTO PREVENTIVO', x, y);
-        y += 10;
+        y += 8;
         
         const total = typeof globalTotalAcumulado !== 'undefined' ? globalTotalAcumulado : 
                      (typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0);
         
         const filas = [
-            ['Revision Preventiva', '500', this.getEstado(total, 500), this.getRestantes(total, 500) + ' ciclos'],
-            ['Lubricacion', '1000', this.getEstado(total, 1000), this.getRestantes(total, 1000) + ' ciclos'],
-            ['Revision General', '2000', this.getEstado(total, 2000), this.getRestantes(total, 2000) + ' ciclos']
+            ['Revision Preventiva', '500', this.getEstado(total, 500), this.getRestantes(total, 500)],
+            ['Lubricacion', '1000', this.getEstado(total, 1000), this.getRestantes(total, 1000)],
+            ['Revision General', '2000', this.getEstado(total, 2000), this.getRestantes(total, 2000)]
         ];
         
-        // Cabecera
+        const colWidth = [40, 22, 30, 35];
+        let xPos = x;
+        
         doc.setFillColor(0, 51, 102);
         doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
+        doc.setFontSize(8);
         
-        const colWidth = [45, 25, 35, 40];
-        let xPos = x;
-        
-        doc.rect(xPos, y, colWidth[0], 8, 'F');
-        doc.text('Tipo', xPos + 2, y + 5.5);
+        doc.rect(xPos, y, colWidth[0], 7, 'F');
+        doc.text('Tipo', xPos + 2, y + 5);
         xPos += colWidth[0];
         
-        doc.rect(xPos, y, colWidth[1], 8, 'F');
-        doc.text('Ciclos', xPos + 2, y + 5.5);
+        doc.rect(xPos, y, colWidth[1], 7, 'F');
+        doc.text('Ciclos', xPos + 2, y + 5);
         xPos += colWidth[1];
         
-        doc.rect(xPos, y, colWidth[2], 8, 'F');
-        doc.text('Estado', xPos + 2, y + 5.5);
+        doc.rect(xPos, y, colWidth[2], 7, 'F');
+        doc.text('Estado', xPos + 2, y + 5);
         xPos += colWidth[2];
         
-        doc.rect(xPos, y, colWidth[3], 8, 'F');
-        doc.text('Proximo', xPos + 2, y + 5.5);
-        y += 8;
+        doc.rect(xPos, y, colWidth[3], 7, 'F');
+        doc.text('Proximo', xPos + 2, y + 5);
+        y += 7;
         
-        // Filas
         doc.setTextColor(0, 0, 0);
         doc.setFont('helvetica', 'normal');
         
         for (let i = 0; i < filas.length; i++) {
             if (i % 2 === 0) {
                 doc.setFillColor(245, 245, 245);
-                doc.rect(x, y, colWidth[0] + colWidth[1] + colWidth[2] + colWidth[3], 7, 'F');
+                doc.rect(x, y, colWidth[0] + colWidth[1] + colWidth[2] + colWidth[3], 6, 'F');
             }
             
             xPos = x;
-            doc.text(filas[i][0], xPos + 2, y + 5);
+            doc.text(filas[i][0], xPos + 2, y + 4.5);
             xPos += colWidth[0];
-            doc.text(filas[i][1], xPos + 2, y + 5);
+            doc.text(filas[i][1], xPos + 2, y + 4.5);
             xPos += colWidth[1];
-            doc.text(filas[i][2], xPos + 2, y + 5);
+            doc.text(filas[i][2], xPos + 2, y + 4.5);
             xPos += colWidth[2];
-            doc.text(filas[i][3], xPos + 2, y + 5);
+            doc.text(filas[i][3], xPos + 2, y + 4.5);
             
-            y += 7;
+            y += 6;
         }
         
-        return y + 15;
+        return y + 10;
     }
 
     getEstado(total, limite) {
         if (total >= limite) return 'Completado';
+        const restantes = limite - total;
+        if (restantes <= 100) return 'Proximo';
         return 'Pendiente';
     }
 
@@ -558,12 +560,12 @@ El promedio diario de la ultima semana es de ${promedioSemanal} ciclos por dia.`
         
         for (let i = 1; i <= pageCount; i++) {
             doc.setPage(i);
-            doc.setFontSize(8);
+            doc.setFontSize(7);
             doc.setTextColor(150, 150, 150);
             doc.text(
                 'Instituto Tecnologico Industrial Brasil Bolivia - Ingenieria Informatica | Pagina ' + i + ' de ' + pageCount,
                 pageWidth / 2,
-                doc.internal.pageSize.getHeight() - 12,
+                doc.internal.pageSize.getHeight() - 10,
                 { align: 'center' }
             );
         }
