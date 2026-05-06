@@ -1,6 +1,6 @@
 // ============================================================
-// SMARTGATE - GENERADOR DE PDF CORREGIDO
-// Versión estable - Sin emojis, sin errores 404
+// SMARTGATE - GENERADOR DE PDF (VERSIÓN HÍBRIDA)
+// Con logos + gráficos + sin caracteres rotos
 // ============================================================
 
 class GeneradorPDF {
@@ -15,13 +15,26 @@ class GeneradorPDF {
             derecho: 20
         };
         
+        // URLs de logos (desde localStorage o por defecto)
+        this.urlsLogos = {
+            instituto: window.location.origin + '/porton-monitor-secondary/img/logo-instituto.png',
+            carrera: window.location.origin + '/porton-monitor-secondary/img/logo-carrera.webp'
+        };
+        
+        this.logosCache = {
+            instituto: localStorage.getItem('logo_instituto'),
+            carrera: localStorage.getItem('logo_carrera')
+        };
+        
         this.verificarLibrerias();
     }
 
     verificarLibrerias() {
         if (typeof jspdf !== 'undefined' && typeof html2canvas !== 'undefined') {
+            console.log('✅ Librerías ya cargadas');
             this.libreriasCargadas = true;
         } else {
+            console.log('⏳ Cargando librerías...');
             this.cargarLibrerias();
         }
     }
@@ -58,6 +71,117 @@ class GeneradorPDF {
         }
     }
 
+    async cargarImagenDesdeURL(url) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'Anonymous';
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                resolve(canvas.toDataURL('image/png'));
+            };
+            img.onerror = reject;
+            img.src = url;
+        });
+    }
+
+    async agregarEncabezadoConLogos(doc) {
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const logoWidth = 22;
+        const logoHeight = 22;
+        const x = this.margen.izquierdo;
+        
+        // Logo izquierdo (Instituto)
+        let logoInstitutoData = null;
+        try {
+            if (this.logosCache.instituto) {
+                logoInstitutoData = this.logosCache.instituto;
+            } else {
+                logoInstitutoData = await this.cargarImagenDesdeURL(this.urlsLogos.instituto);
+            }
+        } catch(e) {
+            console.log('Logo instituto no disponible');
+        }
+        
+        if (logoInstitutoData) {
+            try {
+                doc.addImage(logoInstitutoData, 'PNG', x, 10, logoWidth, logoHeight);
+            } catch(e) {
+                this.dibujarTextoInstituto(doc, x, 20);
+            }
+        } else {
+            this.dibujarTextoInstituto(doc, x, 20);
+        }
+        
+        // Título central
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 51, 102);
+        doc.text('SMARTGATE MONITOR', pageWidth / 2, 18, { align: 'center' });
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(80, 80, 80);
+        doc.text('Sistema Predictivo de Mantenimiento', pageWidth / 2, 26, { align: 'center' });
+        doc.text('Porton Automatico', pageWidth / 2, 32, { align: 'center' });
+        
+        // Logo derecho (Carrera)
+        let logoCarreraData = null;
+        try {
+            if (this.logosCache.carrera) {
+                logoCarreraData = this.logosCache.carrera;
+            } else {
+                logoCarreraData = await this.cargarImagenDesdeURL(this.urlsLogos.carrera);
+            }
+        } catch(e) {
+            console.log('Logo carrera no disponible');
+        }
+        
+        if (logoCarreraData) {
+            try {
+                doc.addImage(logoCarreraData, 'PNG', pageWidth - this.margen.derecho - logoWidth, 10, logoWidth, logoHeight);
+            } catch(e) {
+                this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 20);
+            }
+        } else {
+            this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 20);
+        }
+        
+        // Línea separadora
+        doc.setDrawColor(200, 200, 200);
+        doc.line(x, 42, pageWidth - this.margen.derecho, 42);
+        
+        // Fecha
+        doc.setFontSize(9);
+        doc.setTextColor(120, 120, 120);
+        const fechaActual = new Date().toLocaleDateString('es-ES', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        doc.text(fechaActual, pageWidth - this.margen.derecho - 5, 52, { align: 'right' });
+        
+        return 58;
+    }
+
+    dibujarTextoInstituto(doc, x, y) {
+        doc.setFontSize(7);
+        doc.setTextColor(100);
+        doc.text('Instituto Tecnologico', x, y);
+        doc.text('Industrial Brasil Bolivia', x, y + 4);
+    }
+
+    dibujarTextoUniversidad(doc, x, y) {
+        doc.setFontSize(7);
+        doc.setTextColor(100);
+        doc.text('Ingenieria', x + 5, y);
+        doc.text('Informatica', x + 5, y + 4);
+    }
+
     async generarReportePDF(tipo = 'completo') {
         try {
             this.mostrarMensaje('Generando PDF...', '#3b82f6');
@@ -70,18 +194,18 @@ class GeneradorPDF {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
             
-            // Capturar gráficos disponibles
+            // Capturar gráficos
             const graficoDiario = await this.capturarGrafico('dailyChart');
             const graficoHorario = await this.capturarGrafico('hourlyChart');
             
             // Página 1
-            let y = await this.agregarEncabezado(doc);
+            let y = await this.agregarEncabezadoConLogos(doc);
             y = await this.agregarResumen(doc, y);
             y = await this.agregarGrafico(doc, y, graficoDiario, 'Ciclos por dia (Ultimos 7 dias)');
             
             // Página 2
             doc.addPage();
-            y = await this.agregarEncabezado(doc);
+            y = await this.agregarEncabezadoConLogos(doc);
             y = await this.agregarGrafico(doc, y, graficoHorario, 'Horario de actividad');
             y = await this.agregarTablaMantenimiento(doc, y);
             y = await this.agregarPrediccion(doc, y);
@@ -96,34 +220,6 @@ class GeneradorPDF {
             console.error('Error:', error);
             this.mostrarMensaje('Error: ' + error.message, '#ef4444');
         }
-    }
-
-    async agregarEncabezado(doc) {
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const x = this.margen.izquierdo;
-        
-        doc.setFontSize(18);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(0, 51, 102);
-        doc.text('SMARTGATE MONITOR', pageWidth / 2, 20, { align: 'center' });
-        
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(80, 80, 80);
-        doc.text('Sistema Predictivo de Mantenimiento', pageWidth / 2, 28, { align: 'center' });
-        doc.text('Porton Automatico', pageWidth / 2, 34, { align: 'center' });
-        
-        doc.setDrawColor(200, 200, 200);
-        doc.line(x, 42, pageWidth - this.margen.derecho, 42);
-        
-        doc.setFontSize(9);
-        doc.setTextColor(120, 120, 120);
-        const fecha = new Date().toLocaleDateString('es-ES', {
-            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-        });
-        doc.text(fecha, pageWidth - this.margen.derecho - 5, 52, { align: 'right' });
-        
-        return 60;
     }
 
     async agregarResumen(doc, y) {
@@ -168,11 +264,11 @@ class GeneradorPDF {
                 doc.addImage(grafico, 'PNG', x, y, 160, 70);
                 y += 80;
             } catch(e) {
-                doc.text('No se pudo cargar el grafico', x + 5, y);
+                doc.text('Grafico no disponible', x + 5, y);
                 y += 15;
             }
         } else {
-            doc.text('No hay datos suficientes para mostrar el grafico', x + 5, y);
+            doc.text('No hay datos suficientes', x + 5, y);
             y += 15;
         }
         
@@ -357,7 +453,7 @@ class GeneradorPDF {
             
             const data = [
                 ['SMARTGATE MONITOR - REPORTE COMPLETO'],
-                ['Instituto Tecnologico Industrial Brasil Bolivia'],
+                ['Instituto Tecnologico Industrial Brasil Bolivia - Ingenieria Informatica'],
                 ['Fecha:', new Date().toLocaleString()],
                 [''],
                 ['RESUMEN GENERAL'],
@@ -372,7 +468,7 @@ class GeneradorPDF {
             ];
             
             const ws = XLSX.utils.aoa_to_sheet(data);
-            ws['!cols'] = [{wch:25}, {wch:12}, {wch:12}, {wch:12}];
+            ws['!cols'] = [{wch:28}, {wch:12}, {wch:12}, {wch:15}];
             XLSX.utils.book_append_sheet(wb, ws, 'SmartGate');
             
             const fecha = new Date().toISOString().split('T')[0];
