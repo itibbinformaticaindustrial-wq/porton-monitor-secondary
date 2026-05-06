@@ -1,16 +1,18 @@
-// Generador de PDF - VERSIÓN CON ESPACIADO CORREGIDO
+// ============================================================
+// SMARTGATE - GENERADOR DE PDF MEJORADO
+// Con gráficos visuales desde Chart.js
+// ============================================================
+
 class GeneradorPDF {
     constructor() {
-        console.log('📄 Inicializando GeneradorPDF...');
+        console.log('📄 Inicializando GeneradorPDF Mejorado...');
         this.libreriasCargadas = false;
         
-        // Configuración de márgenes (en mm)
-        // Carta: 216mm x 279mm
         this.margen = {
-            superior: 25,    // 2.5 cm
-            inferior: 25,    // 2.5 cm
-            izquierdo: 30,   // 3 cm
-            derecho: 25      // 2.5 cm
+            superior: 25,
+            inferior: 25,
+            izquierdo: 30,
+            derecho: 25
         };
         
         this.urlsLogos = {
@@ -63,11 +65,49 @@ class GeneradorPDF {
         });
     }
 
-    async generarReportePDF(tipo = 'completo') {
-        console.log('📑 Generando PDF tipo:', tipo);
+    // ============================================================
+    // NUEVO: Capturar gráficos como imágenes
+    // ============================================================
+    async capturarGrafico(canvasId) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) {
+            console.log(`⚠️ Canvas ${canvasId} no encontrado`);
+            return null;
+        }
         
         try {
-            this.mostrarMensajeCarga('Generando PDF, espere un momento...');
+            // Esperar a que Chart.js termine de renderizar
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Convertir canvas a imagen
+            const dataUrl = canvas.toDataURL('image/png');
+            console.log(`✅ Gráfico ${canvasId} capturado`);
+            return dataUrl;
+        } catch (error) {
+            console.error(`❌ Error capturando ${canvasId}:`, error);
+            return null;
+        }
+    }
+
+    // ============================================================
+    // NUEVO: Capturar múltiples gráficos
+    // ============================================================
+    async capturarTodosLosGraficos() {
+        const graficos = {
+            diario: await this.capturarGrafico('dailyChart'),
+            horario: await this.capturarGrafico('hourlyChart'),
+            tendencia: await this.capturarGrafico('trendChart'),
+            proyeccion: await this.capturarGrafico('projectionChart'),
+            meta: await this.capturarGrafico('goalChart')
+        };
+        return graficos;
+    }
+
+    async generarReportePDF(tipo = 'completo') {
+        console.log('📑 Generando PDF con gráficos visuales tipo:', tipo);
+        
+        try {
+            this.mostrarMensajeCarga('Generando PDF con gráficos, espere...');
             
             if (!this.libreriasCargadas) {
                 await this.cargarLibrerias();
@@ -78,45 +118,31 @@ class GeneradorPDF {
                 throw new Error('jsPDF no está disponible');
             }
             
+            // Capturar gráficos ANTES de generar el PDF
+            const graficos = await this.capturarTodosLosGraficos();
+            
             const { jsPDF } = window.jspdf;
-            // Tamaño CARTA: 'letter' = 8.5" x 11"
             const doc = new jsPDF({
-                orientation: 'portrait',
+                orientation: 'landscape',
                 unit: 'mm',
                 format: 'letter'
             });
             
             doc.setFont('helvetica');
-            
             const anchoUtil = doc.internal.pageSize.getWidth() - this.margen.izquierdo - this.margen.derecho;
             
-            // Agregar encabezado (retorna la posición Y después del encabezado)
             let yPos = await this.agregarEncabezadoConLogos(doc, anchoUtil);
+            yPos += 15;
             
-            // Agregar espacio adicional antes del contenido
-            yPos += 15;  // Espacio extra de 15mm
-            
-            // Agregar contenido según tipo
-            switch(tipo) {
-                case 'completo':
-                    yPos = await this.agregarReporteCompleto(doc, yPos, anchoUtil);
-                    break;
-                case 'mantenimiento':
-                    yPos = await this.agregarReporteMantenimiento(doc, yPos, anchoUtil);
-                    break;
-                case 'estadisticas':
-                    yPos = await this.agregarReporteEstadisticas(doc, yPos, anchoUtil);
-                    break;
-                default:
-                    yPos = await this.agregarReporteCompleto(doc, yPos, anchoUtil);
-            }
+            // CONTENIDO CON GRÁFICOS
+            yPos = await this.agregarReporteConGraficos(doc, yPos, anchoUtil, graficos);
             
             this.agregarPiePagina(doc);
             
             const fecha = new Date().toISOString().split('T')[0];
-            doc.save(`reporte_porton_${fecha}.pdf`);
+            doc.save(`smartgate_reporte_${fecha}.pdf`);
             
-            this.mostrarMensajeExito('✅ PDF generado correctamente');
+            this.mostrarMensajeExito('✅ PDF con gráficos generado correctamente');
             
         } catch (error) {
             console.error('❌ Error generando PDF:', error);
@@ -124,10 +150,285 @@ class GeneradorPDF {
         }
     }
 
+    // ============================================================
+    // NUEVO: Reporte con gráficos visuales
+    // ============================================================
+    async agregarReporteConGraficos(doc, yPos, anchoUtil, graficos) {
+        const x = this.margen.izquierdo;
+        const pageWidth = doc.internal.pageSize.getWidth();
+        
+        // Título
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 51, 102);
+        doc.text('📊 DASHBOARD DE MANTENIMIENTO', pageWidth / 2, yPos, { align: 'center' });
+        yPos += 12;
+        
+        // KPI principales
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 51, 102);
+        doc.text('INDICADORES PRINCIPALES', x, yPos);
+        yPos += 8;
+        
+        const totalCiclos = typeof globalTotalAcumulado !== 'undefined' ? globalTotalAcumulado : 0;
+        const ciclosHoy = typeof globalCiclosHoy !== 'undefined' ? globalCiclosHoy : 0;
+        const estadoActual = document.getElementById('currentState')?.textContent || '---';
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(0, 0, 0);
+        
+        const kpis = [
+            { label: '🔢 Ciclos Totales:', value: totalCiclos },
+            { label: '📅 Ciclos Hoy:', value: ciclosHoy },
+            { label: '🚪 Estado Actual:', value: estadoActual }
+        ];
+        
+        kpis.forEach((kpi, index) => {
+            const colX = x + (index * 70);
+            doc.setFont('helvetica', 'bold');
+            doc.text(kpi.label, colX, yPos);
+            doc.setFont('helvetica', 'normal');
+            doc.text(String(kpi.value), colX + 45, yPos);
+        });
+        yPos += 15;
+        
+        // GRÁFICO 1: Ciclos por día (si está disponible)
+        if (graficos.diario) {
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(0, 51, 102);
+            doc.text('📊 Ciclos por día (últimos 7 días)', x, yPos);
+            yPos += 5;
+            
+            try {
+                doc.addImage(graficos.diario, 'PNG', x, yPos, 120, 60);
+                yPos += 65;
+            } catch(e) {
+                doc.text('⚠️ Gráfico no disponible', x + 5, yPos);
+                yPos += 10;
+            }
+        }
+        
+        // GRÁFICO 2: Horario de actividad
+        if (graficos.horario) {
+            if (yPos > 150) {
+                doc.addPage();
+                yPos = 30;
+                await this.agregarEncabezadoConLogos(doc, anchoUtil);
+            }
+            
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(0, 51, 102);
+            doc.text('⏰ Horario de mayor actividad', x, yPos);
+            yPos += 5;
+            
+            try {
+                doc.addImage(graficos.horario, 'PNG', x, yPos, 120, 55);
+                yPos += 60;
+            } catch(e) {
+                doc.text('⚠️ Gráfico no disponible', x + 5, yPos);
+                yPos += 10;
+            }
+        }
+        
+        // Nueva página para más gráficos
+        doc.addPage();
+        yPos = 30;
+        await this.agregarEncabezadoConLogos(doc, anchoUtil);
+        
+        // GRÁFICO 3: Tendencia
+        if (graficos.tendencia) {
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(0, 51, 102);
+            doc.text('📈 Tendencia de uso (últimos 30 días)', x, yPos);
+            yPos += 5;
+            
+            try {
+                doc.addImage(graficos.tendencia, 'PNG', x, yPos, 140, 65);
+                yPos += 70;
+            } catch(e) {
+                doc.text('⚠️ Gráfico no disponible', x + 5, yPos);
+                yPos += 10;
+            }
+        }
+        
+        // GRÁFICO 4: Proyección
+        if (graficos.proyeccion) {
+            if (yPos > 130) {
+                doc.addPage();
+                yPos = 30;
+                await this.agregarEncabezadoConLogos(doc, anchoUtil);
+            }
+            
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(0, 51, 102);
+            doc.text('🔮 Proyección de mantenimiento', x, yPos);
+            yPos += 5;
+            
+            try {
+                doc.addImage(graficos.proyeccion, 'PNG', x, yPos, 130, 60);
+                yPos += 65;
+            } catch(e) {
+                doc.text('⚠️ Gráfico no disponible', x + 5, yPos);
+                yPos += 10;
+            }
+        }
+        
+        // Tabla de mantenimiento
+        if (yPos > 200) {
+            doc.addPage();
+            yPos = 30;
+            await this.agregarEncabezadoConLogos(doc, anchoUtil);
+        }
+        
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 51, 102);
+        doc.text('📋 CALENDARIO DE MANTENIMIENTO', x, yPos);
+        yPos += 10;
+        
+        const tablaMantenimiento = [
+            ['Tipo', 'Ciclos', 'Estado', 'Próximo'],
+            ['Revisión Preventiva', '500', this.obtenerEstadoMantenimiento(500), `${this.obtenerCiclosRestantes(500)} ciclos`],
+            ['Lubricación', '1000', this.obtenerEstadoMantenimiento(1000), `${this.obtenerCiclosRestantes(1000)} ciclos`],
+            ['Revisión General', '2000', this.obtenerEstadoMantenimiento(2000), `${this.obtenerCiclosRestantes(2000)} ciclos`]
+        ];
+        
+        yPos = this.dibujarTabla(doc, tablaMantenimiento, x, yPos, 180);
+        yPos += 15;
+        
+        // Predicción
+        const total = totalCiclos;
+        let prediccion = '';
+        let color = [16, 185, 129];
+        
+        if (total > 4000) {
+            prediccion = '⚠️ CRÍTICO: Se recomienda reemplazo preventivo del motor';
+            color = [220, 38, 38];
+        } else if (total > 3000) {
+            prediccion = '⚠️ ATENCIÓN: Desgaste significativo detectado';
+            color = [245, 158, 11];
+        } else if (total > 2000) {
+            prediccion = 'ℹ️ Mantenimiento regular requerido';
+            color = [59, 130, 246];
+        } else {
+            prediccion = '✅ Sistema en excelente estado';
+            color = [16, 185, 129];
+        }
+        
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(color[0], color[1], color[2]);
+        doc.text(prediccion, x, yPos);
+        
+        return yPos + 20;
+    }
+
+    // ... (resto de métodos existentes: mostrarMensajes, cargarImagen, encabezados, etc.)
+    // Mantengo los métodos originales para no romper nada
+
+    async agregarEncabezadoConLogos(doc, anchoUtil) {
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const logoWidth = 22;
+        const logoHeight = 22;
+        const x = this.margen.izquierdo;
+        
+        let logoInstitutoData = null;
+        try {
+            logoInstitutoData = await this.cargarImagenDesdeURL(this.urlsLogos.instituto);
+        } catch(e) {}
+        
+        if (logoInstitutoData) {
+            try {
+                doc.addImage(logoInstitutoData, 'PNG', x, 10, logoWidth, logoHeight);
+            } catch(e) {
+                this.dibujarTextoInstituto(doc, x, 20);
+            }
+        } else {
+            this.dibujarTextoInstituto(doc, x, 20);
+        }
+        
+        doc.setFontSize(16);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 51, 102);
+        doc.text('SMARTGATE MONITOR', pageWidth / 2, 18, { align: 'center' });
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(80, 80, 80);
+        doc.text('Sistema Predictivo de Mantenimiento', pageWidth / 2, 26, { align: 'center' });
+        doc.text('Portón Automático', pageWidth / 2, 32, { align: 'center' });
+        
+        let logoCarreraData = null;
+        try {
+            logoCarreraData = await this.cargarImagenDesdeURL(this.urlsLogos.carrera);
+        } catch(e) {}
+        
+        if (logoCarreraData) {
+            try {
+                doc.addImage(logoCarreraData, 'PNG', pageWidth - this.margen.derecho - logoWidth, 10, logoWidth, logoHeight);
+            } catch(e) {
+                this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 20);
+            }
+        } else {
+            this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 20);
+        }
+        
+        doc.setDrawColor(200, 200, 200);
+        doc.line(x, 42, pageWidth - this.margen.derecho, 42);
+        
+        doc.setFontSize(9);
+        doc.setTextColor(120, 120, 120);
+        const fechaActual = new Date().toLocaleDateString('es-ES', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        doc.text(fechaActual, pageWidth - this.margen.derecho - 5, 52, { align: 'right' });
+        
+        return 52;
+    }
+
+    dibujarTextoInstituto(doc, x, y) {
+        doc.setFontSize(7);
+        doc.setTextColor(100);
+        doc.text('Instituto Tecnológico', x, y);
+        doc.text('Industrial Brasil Bolivia', x, y + 4);
+    }
+
+    dibujarTextoUniversidad(doc, x, y) {
+        doc.setFontSize(7);
+        doc.setTextColor(100);
+        doc.text('Ingeniería', x + 5, y);
+        doc.text('Informática', x + 5, y + 4);
+    }
+
+    async cargarImagenDesdeURL(url) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'Anonymous';
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                resolve(canvas.toDataURL('image/png'));
+            };
+            img.onerror = reject;
+            img.src = url;
+        });
+    }
+
     mostrarMensajeCarga(mensaje) {
         const toast = document.getElementById('pdfLoadingToast');
         if (toast) toast.remove();
-        
         const nuevo = document.createElement('div');
         nuevo.id = 'pdfLoadingToast';
         nuevo.style.cssText = `
@@ -149,7 +450,6 @@ class GeneradorPDF {
     mostrarMensajeExito(mensaje) {
         const toast = document.getElementById('pdfLoadingToast');
         if (toast) toast.remove();
-        
         const exito = document.createElement('div');
         exito.style.cssText = `
             position: fixed;
@@ -170,7 +470,6 @@ class GeneradorPDF {
     mostrarMensajeError(mensaje) {
         const toast = document.getElementById('pdfLoadingToast');
         if (toast) toast.remove();
-        
         const error = document.createElement('div');
         error.style.cssText = `
             position: fixed;
@@ -186,367 +485,6 @@ class GeneradorPDF {
         error.innerHTML = `❌ ${mensaje}`;
         document.body.appendChild(error);
         setTimeout(() => error.remove(), 5000);
-    }
-
-    async cargarImagenDesdeURL(url) {
-        return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.crossOrigin = 'Anonymous';
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-                resolve(canvas.toDataURL('image/png'));
-            };
-            img.onerror = (e) => {
-                console.log('No se pudo cargar imagen:', url);
-                reject(e);
-            };
-            img.src = url;
-        });
-    }
-
-    async agregarEncabezadoConLogos(doc, anchoUtil) {
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const logoWidth = 22;
-        const logoHeight = 22;
-        const x = this.margen.izquierdo;
-        
-        // Logo izquierdo (Instituto)
-        let logoInstitutoData = null;
-        try {
-            logoInstitutoData = await this.cargarImagenDesdeURL(this.urlsLogos.instituto);
-        } catch(e) {
-            console.log('Usando texto para logo instituto');
-        }
-        
-        if (logoInstitutoData) {
-            try {
-                doc.addImage(logoInstitutoData, 'PNG', x, 10, logoWidth, logoHeight);
-            } catch(e) {
-                this.dibujarTextoInstituto(doc, x, 20);
-            }
-        } else {
-            this.dibujarTextoInstituto(doc, x, 20);
-        }
-        
-        // Título central
-        doc.setFontSize(16);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(0, 51, 102);
-        doc.text('SMARTGATE MONITOR', pageWidth / 2, 18, { align: 'center' });
-        
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(80, 80, 80);
-        doc.text('Sistema Predictivo de Mantenimiento', pageWidth / 2, 26, { align: 'center' });
-        doc.text('Portón Automático', pageWidth / 2, 32, { align: 'center' });
-        
-        // Logo derecho (Carrera)
-        let logoCarreraData = null;
-        try {
-            logoCarreraData = await this.cargarImagenDesdeURL(this.urlsLogos.carrera);
-        } catch(e) {
-            console.log('Usando texto para logo carrera');
-        }
-        
-        if (logoCarreraData) {
-            try {
-                doc.addImage(logoCarreraData, 'PNG', pageWidth - this.margen.derecho - logoWidth, 10, logoWidth, logoHeight);
-            } catch(e) {
-                this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 20);
-            }
-        } else {
-            this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 20);
-        }
-        
-        // Línea separadora
-        doc.setDrawColor(200, 200, 200);
-        doc.line(x, 42, pageWidth - this.margen.derecho, 42);
-        
-        // FECHA - DENTRO DEL MARGEN DERECHO
-        doc.setFontSize(9);
-        doc.setTextColor(120, 120, 120);
-        const fechaActual = new Date().toLocaleDateString('es-ES', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-        doc.text(fechaActual, pageWidth - this.margen.derecho - 5, 52, { align: 'right' });
-        
-        // Retornar la posición Y después del encabezado (línea + espacio)
-        return 52;  // Posición después de la fecha
-    }
-
-    dibujarTextoInstituto(doc, x, y) {
-        doc.setFontSize(7);
-        doc.setTextColor(100);
-        doc.text('Instituto Tecnológico', x, y);
-        doc.text('Industrial Brasil Bolivia', x, y + 4);
-    }
-
-    dibujarTextoUniversidad(doc, x, y) {
-        doc.setFontSize(7);
-        doc.setTextColor(100);
-        doc.text('Ingeniería', x + 5, y);
-        doc.text('Informática', x + 5, y + 4);
-    }
-
-    async agregarReporteCompleto(doc, yPos, anchoUtil) {
-        const x = this.margen.izquierdo;
-        
-        // Título sección
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(0, 51, 102);
-        doc.text('RESUMEN GENERAL', x, yPos);
-        yPos += 12;  // Más espacio después del título
-        
-        // Datos en formato de lista (no tabla)
-        doc.setFontSize(10);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(0, 0, 0);
-        
-        const totalCiclos = typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0;
-        const ciclosHoy = typeof mantenimiento !== 'undefined' ? mantenimiento.obtenerCiclosHoy() : 0;
-        const estadoActual = document.getElementById('currentState')?.textContent || '---';
-        const saludSistema = document.getElementById('healthPercent')?.textContent + '%' || '100%';
-        const proximoMantenimiento = document.getElementById('nextMaintenance')?.textContent || '---';
-        
-        const datos = [
-            { label: 'Ciclos totales:', value: totalCiclos.toString() },
-            { label: 'Ciclos hoy:', value: ciclosHoy.toString() },
-            { label: 'Estado actual:', value: estadoActual },
-            { label: 'Salud del sistema:', value: saludSistema },
-            { label: 'Próximo mantenimiento:', value: proximoMantenimiento }
-        ];
-        
-        datos.forEach((item) => {
-            doc.setFont('helvetica', 'bold');
-            doc.text(item.label, x + 5, yPos);
-            doc.setFont('helvetica', 'normal');
-            doc.text(item.value, x + 55, yPos);
-            yPos += 8;  // Espacio entre líneas
-        });
-        
-        yPos += 12;  // Espacio antes de la siguiente sección
-        
-        // Verificar espacio para tabla
-        if (yPos > 230) {
-            doc.addPage();
-            yPos = this.margen.superior + 15;
-            await this.agregarEncabezadoConLogos(doc, anchoUtil);
-            yPos += 15;
-        }
-        
-        // Tabla de mantenimiento
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(0, 51, 102);
-        doc.text('MANTENIMIENTO PREVENTIVO', x, yPos);
-        yPos += 10;
-        
-        const tablaMantenimiento = [
-            ['Tipo', 'Ciclos', 'Estado', 'Próximo'],
-            ['Revisión Preventiva', '500', this.obtenerEstadoMantenimiento(500), `${this.obtenerCiclosRestantes(500)} ciclos`],
-            ['Lubricación', '1000', this.obtenerEstadoMantenimiento(1000), `${this.obtenerCiclosRestantes(1000)} ciclos`],
-            ['Revisión General', '2000', this.obtenerEstadoMantenimiento(2000), `${this.obtenerCiclosRestantes(2000)} ciclos`]
-        ];
-        
-        yPos = this.dibujarTabla(doc, tablaMantenimiento, x, yPos, anchoUtil);
-        yPos += 15;
-        
-        // Verificar espacio
-        if (yPos > 220) {
-            doc.addPage();
-            yPos = this.margen.superior + 15;
-            await this.agregarEncabezadoConLogos(doc, anchoUtil);
-            yPos += 15;
-        }
-        
-        // Estadísticas de uso
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(0, 51, 102);
-        doc.text('ESTADÍSTICAS DE USO', x, yPos);
-        yPos += 10;
-        
-        let ciclosPorDia = [];
-        if (typeof mantenimiento !== 'undefined') {
-            ciclosPorDia = mantenimiento.obtenerCiclosPorDia(7);
-        }
-        
-        doc.setFontSize(9);
-        doc.text('Ciclos por día (últimos 7 días):', x, yPos);
-        yPos += 6;
-        
-        if (ciclosPorDia.length === 0) {
-            doc.text('No hay datos disponibles', x + 5, yPos);
-            yPos += 6;
-        } else {
-            for (const [fecha, cantidad] of ciclosPorDia) {
-                if (yPos > 260) {
-                    doc.addPage();
-                    yPos = this.margen.superior + 15;
-                    await this.agregarEncabezadoConLogos(doc, anchoUtil);
-                    yPos += 15;
-                }
-                doc.text(`${fecha.substring(5)}: ${cantidad} ciclos`, x + 5, yPos);
-                yPos += 5;
-            }
-        }
-        
-        yPos += 6;
-        
-        // Horas más activas
-        let horasActivas = [];
-        if (typeof mantenimiento !== 'undefined') {
-            horasActivas = mantenimiento.obtenerCiclosPorHora();
-        }
-        
-        const horasTop = horasActivas
-            .map((cantidad, hora) => ({ hora, cantidad }))
-            .sort((a, b) => b.cantidad - a.cantidad)
-            .slice(0, 5);
-        
-        doc.text('Horas de mayor actividad:', x, yPos);
-        yPos += 6;
-        
-        if (horasTop.length === 0 || horasTop[0].cantidad === 0) {
-            doc.text('No hay datos de actividad disponibles', x + 5, yPos);
-        } else {
-            for (const { hora, cantidad } of horasTop) {
-                if (yPos > 260) {
-                    doc.addPage();
-                    yPos = this.margen.superior + 15;
-                    await this.agregarEncabezadoConLogos(doc, anchoUtil);
-                    yPos += 15;
-                }
-                doc.text(`${hora}:00 - ${hora + 1}:00: ${cantidad} ciclos`, x + 5, yPos);
-                yPos += 5;
-            }
-        }
-        
-        return yPos;
-    }
-
-    async agregarReporteMantenimiento(doc, yPos, anchoUtil) {
-        const x = this.margen.izquierdo;
-        
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(0, 51, 102);
-        doc.text('HISTORIAL DE MANTENIMIENTO', x, yPos);
-        yPos += 12;
-        
-        let historialMantenimiento = [];
-        if (typeof mantenimiento !== 'undefined') {
-            historialMantenimiento = mantenimiento.historialMantenimiento || [];
-        }
-        
-        if (historialMantenimiento.length === 0) {
-            doc.text('No hay registros de mantenimiento previos', x + 5, yPos);
-            yPos += 10;
-        } else {
-            const tablaMantenimientos = [
-                ['Fecha', 'Tipo', 'Ciclos al momento']
-            ];
-            
-            historialMantenimiento.slice(-10).forEach(m => {
-                tablaMantenimientos.push([
-                    new Date(m.fecha).toLocaleDateString(),
-                    m.tipo,
-                    m.totalCiclos.toString()
-                ]);
-            });
-            
-            yPos = this.dibujarTabla(doc, tablaMantenimientos, x, yPos, anchoUtil);
-            yPos += 15;
-        }
-        
-        if (yPos > 230) {
-            doc.addPage();
-            yPos = this.margen.superior + 15;
-            await this.agregarEncabezadoConLogos(doc, anchoUtil);
-            yPos += 15;
-        }
-        
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.text('RECOMENDACIONES', x, yPos);
-        yPos += 10;
-        
-        const recomendaciones = [
-            '• Realizar inspección visual mensual del mecanismo',
-            '• Verificar el correcto funcionamiento de las fotocélulas',
-            '• Mantener limpias las guías del portón',
-            '• Revisar conexiones eléctricas cada 3 meses',
-            '• Programar mantenimiento profesional anual'
-        ];
-        
-        doc.setFontSize(9);
-        for (const rec of recomendaciones) {
-            if (yPos > 260) {
-                doc.addPage();
-                yPos = this.margen.superior + 15;
-                await this.agregarEncabezadoConLogos(doc, anchoUtil);
-                yPos += 15;
-            }
-            doc.text(rec, x + 5, yPos);
-            yPos += 6;
-        }
-        
-        return yPos;
-    }
-
-    async agregarReporteEstadisticas(doc, yPos, anchoUtil) {
-        const x = this.margen.izquierdo;
-        
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(0, 51, 102);
-        doc.text('ANÁLISIS DE TENDENCIAS', x, yPos);
-        yPos += 12;
-        
-        const totalCiclos = typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0;
-        const proyeccion = Math.round(totalCiclos * 1.1);
-        
-        doc.setFontSize(10);
-        doc.text(`Ciclos actuales: ${totalCiclos}`, x + 5, yPos);
-        yPos += 8;
-        doc.text(`Proyección próximo mes: ${proyeccion} ciclos`, x + 5, yPos);
-        yPos += 8;
-        
-        const vidaUtil = 5000;
-        const porcentajeVida = (totalCiclos / vidaUtil * 100).toFixed(1);
-        doc.text(`Vida útil consumida: ${porcentajeVida}%`, x + 5, yPos);
-        yPos += 8;
-        
-        const vidaRestante = vidaUtil - totalCiclos;
-        doc.text(`Ciclos restantes estimados: ${vidaRestante}`, x + 5, yPos);
-        yPos += 15;
-        
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        
-        if (totalCiclos > 4000) {
-            doc.setTextColor(220, 38, 38);
-            doc.text('⚠️ ALERTA: Se recomienda reemplazo preventivo del motor', x + 5, yPos);
-        } else if (totalCiclos > 3000) {
-            doc.setTextColor(245, 158, 11);
-            doc.text('⚠️ Atención: Desgaste significativo detectado', x + 5, yPos);
-        } else if (totalCiclos > 2000) {
-            doc.setTextColor(59, 130, 246);
-            doc.text('ℹ️ Mantenimiento regular requerido', x + 5, yPos);
-        } else {
-            doc.setTextColor(16, 185, 129);
-            doc.text('✅ Sistema en excelente estado', x + 5, yPos);
-        }
-        
-        return yPos + 15;
     }
 
     agregarPiePagina(doc) {
@@ -571,7 +509,6 @@ class GeneradorPDF {
         const colWidth = ancho / colCount;
         let yPos = y;
         
-        // Cabecera
         doc.setFillColor(0, 51, 102);
         doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'bold');
@@ -584,7 +521,6 @@ class GeneradorPDF {
         
         yPos += 8;
         
-        // Filas
         doc.setTextColor(0, 0, 0);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9);
@@ -649,7 +585,7 @@ class GeneradorPDF {
 
     async exportarExcelCompleto() {
         try {
-            this.mostrarMensajeCarga('Generando Excel, espere...');
+            this.mostrarMensajeCarga('Generando Excel con gráficos, espere...');
             
             if (typeof XLSX === 'undefined') {
                 await this.cargarSheetJS();
@@ -658,8 +594,8 @@ class GeneradorPDF {
             
             const wb = XLSX.utils.book_new();
             
-            const totalCiclos = typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0;
-            const ciclosHoy = typeof mantenimiento !== 'undefined' ? mantenimiento.obtenerCiclosHoy() : 0;
+            const totalCiclos = typeof globalTotalAcumulado !== 'undefined' ? globalTotalAcumulado : 0;
+            const ciclosHoy = typeof globalCiclosHoy !== 'undefined' ? globalCiclosHoy : 0;
             const estadoActual = document.getElementById('currentState')?.textContent || '---';
             const saludSistema = document.getElementById('healthPercent')?.textContent + '%' || '100%';
             
@@ -697,26 +633,10 @@ class GeneradorPDF {
             wsCiclos['!cols'] = [{wch:15}, {wch:10}];
             XLSX.utils.book_append_sheet(wb, wsCiclos, 'Ciclos por Día');
             
-            const eventosData = [['Fecha', 'Tipo', 'Evento', 'Detalles']];
-            if (typeof registro !== 'undefined' && registro.eventos) {
-                registro.eventos.slice(0, 500).forEach(evento => {
-                    eventosData.push([
-                        new Date(evento.timestamp).toLocaleString(),
-                        evento.tipo,
-                        evento.datos.estado || evento.datos.abierto || '-',
-                        this.formatearDetallesExcel(evento.datos)
-                    ]);
-                });
-            }
-            
-            const wsEventos = XLSX.utils.aoa_to_sheet(eventosData);
-            wsEventos['!cols'] = [{wch:20}, {wch:12}, {wch:15}, {wch:30}];
-            XLSX.utils.book_append_sheet(wb, wsEventos, 'Eventos');
-            
             const fecha = new Date().toISOString().split('T')[0];
-            XLSX.writeFile(wb, `reporte_porton_${fecha}.xlsx`);
+            XLSX.writeFile(wb, `smartgate_reporte_${fecha}.xlsx`);
             
-            this.mostrarMensajeExito('✅ Excel exportado correctamente');
+            this.mostrarMensajeExito('✅ Excel generado correctamente');
             
         } catch (error) {
             console.error('Error exportando Excel:', error);
