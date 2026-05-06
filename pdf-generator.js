@@ -1,5 +1,5 @@
 // ============================================================
-// SMARTGATE - GENERADOR DE PDF (VERSIÓN FINAL)
+// SMARTGATE - GENERADOR DE PDF (VERSIÓN FINAL CORREGIDA)
 // Con: marca de agua con logo + texto "Informatica Industrial"
 // Espacios optimizados y texto completo
 // ============================================================
@@ -9,7 +9,6 @@ class GeneradorPDF {
         console.log('📄 Inicializando GeneradorPDF Final...');
         this.libreriasCargadas = false;
         
-        // Márgenes más pequeños para aprovechar mejor la página
         this.margen = {
             superior: 20,
             inferior: 20,
@@ -95,14 +94,10 @@ class GeneradorPDF {
         });
     }
 
-    // ============================================================
-    // MARCA DE AGUA CON LOGO DE CARRERA Y TEXTO
-    // ============================================================
     async agregarMarcaDeAgua(doc) {
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();
         
-        // Cargar logo de carrera para marca de agua
         let logoData = null;
         try {
             if (this.logosCache.carrera) {
@@ -116,7 +111,6 @@ class GeneradorPDF {
         
         if (logoData) {
             try {
-                // Logo grande en el centro (60mm x 60mm)
                 const logoWidth = 55;
                 const logoHeight = 55;
                 const x = (pageWidth - logoWidth) / 2;
@@ -129,7 +123,6 @@ class GeneradorPDF {
             } catch(e) {}
         }
         
-        // Texto "Informatica Industrial" debajo del logo
         doc.saveGraphicsState();
         doc.setGState(new doc.GState({ opacity: 0.12 }));
         doc.setFontSize(20);
@@ -145,7 +138,6 @@ class GeneradorPDF {
         const logoHeight = 20;
         const x = this.margen.izquierdo;
         
-        // Logo izquierdo
         let logoInstitutoData = null;
         try {
             if (this.logosCache.instituto) {
@@ -165,7 +157,6 @@ class GeneradorPDF {
             this.dibujarTextoInstituto(doc, x, 15);
         }
         
-        // Título
         doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
@@ -176,7 +167,6 @@ class GeneradorPDF {
         doc.setTextColor(80, 80, 80);
         doc.text('Sistema Predictivo de Mantenimiento | Porton Automatico', pageWidth / 2, 23, { align: 'center' });
         
-        // Logo derecho
         let logoCarreraData = null;
         try {
             if (this.logosCache.carrera) {
@@ -196,11 +186,9 @@ class GeneradorPDF {
             this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 15);
         }
         
-        // Línea separadora
         doc.setDrawColor(200, 200, 200);
         doc.line(x, 35, pageWidth - this.margen.derecho, 35);
         
-        // Fecha
         doc.setFontSize(8);
         doc.setTextColor(120, 120, 120);
         const fechaActual = new Date().toLocaleDateString('es-ES', {
@@ -415,7 +403,6 @@ class GeneradorPDF {
             const graficoHorario = await this.capturarGrafico('hourlyChart', 2);
             const graficoTendencia = await this.capturarGrafico('trendChart', 2);
             
-            // ========== PÁGINA 1 ==========
             let y = await this.agregarEncabezadoConLogos(doc);
             await this.agregarMarcaDeAgua(doc);
             y = await this.agregarResumenEjecutivo(doc, y);
@@ -423,14 +410,12 @@ class GeneradorPDF {
             y = await this.agregarGraficoSalud(doc, y);
             y = await this.agregarPrediccionConFecha(doc, y);
             
-            // ========== PÁGINA 2 ==========
             doc.addPage();
             y = await this.agregarEncabezadoConLogos(doc);
             await this.agregarMarcaDeAgua(doc);
             y = await this.agregarGrafico(doc, y, graficoDiario, 'Ciclos por dia (Ultimos 7 dias)');
             y = await this.agregarGrafico(doc, y, graficoHorario, 'Horario de actividad');
             
-            // ========== PÁGINA 3 ==========
             doc.addPage();
             y = await this.agregarEncabezadoConLogos(doc);
             await this.agregarMarcaDeAgua(doc);
@@ -476,6 +461,7 @@ class GeneradorPDF {
         return y;
     }
 
+    // ✅ FUNCIÓN CORREGIDA - Convertir números a string
     async agregarTablaMantenimiento(doc, y) {
         const x = this.margen.izquierdo;
         
@@ -488,10 +474,11 @@ class GeneradorPDF {
         const total = typeof globalTotalAcumulado !== 'undefined' ? globalTotalAcumulado : 
                      (typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0);
         
+        // ✅ Convertir getRestantes a String para evitar error de tipo
         const filas = [
-            ['Revision Preventiva', '500', this.getEstado(total, 500), this.getRestantes(total, 500)],
-            ['Lubricacion', '1000', this.getEstado(total, 1000), this.getRestantes(total, 1000)],
-            ['Revision General', '2000', this.getEstado(total, 2000), this.getRestantes(total, 2000)]
+            ['Revision Preventiva', '500', this.getEstado(total, 500), String(this.getRestantes(total, 500))],
+            ['Lubricacion', '1000', this.getEstado(total, 1000), String(this.getRestantes(total, 1000))],
+            ['Revision General', '2000', this.getEstado(total, 2000), String(this.getRestantes(total, 2000))]
         ];
         
         const colWidth = [40, 22, 30, 35];
@@ -534,7 +521,8 @@ class GeneradorPDF {
             xPos += colWidth[1];
             doc.text(filas[i][2], xPos + 2, y + 4.5);
             xPos += colWidth[2];
-            doc.text(filas[i][3], xPos + 2, y + 4.5);
+            // ✅ Asegurar que sea string
+            doc.text(String(filas[i][3]), xPos + 2, y + 4.5);
             
             y += 6;
         }
@@ -550,8 +538,8 @@ class GeneradorPDF {
     }
 
     getRestantes(total, limite) {
-        if (total >= limite) return 0;
-        return limite - total;
+        if (total >= limite) return '0';  // ✅ Retorna string
+        return String(limite - total);     // ✅ Retorna string
     }
 
     agregarPiePagina(doc) {
@@ -629,9 +617,9 @@ class GeneradorPDF {
                 [''],
                 ['MANTENIMIENTO'],
                 ['Tipo', 'Ciclos', 'Estado', 'Proximo'],
-                ['Revision Preventiva', 500, this.getEstado(total, 500), this.getRestantes(total, 500)],
-                ['Lubricacion', 1000, this.getEstado(total, 1000), this.getRestantes(total, 1000)],
-                ['Revision General', 2000, this.getEstado(total, 2000), this.getRestantes(total, 2000)]
+                ['Revision Preventiva', 500, this.getEstado(total, 500), Number(this.getRestantes(total, 500))],
+                ['Lubricacion', 1000, this.getEstado(total, 1000), Number(this.getRestantes(total, 1000))],
+                ['Revision General', 2000, this.getEstado(total, 2000), Number(this.getRestantes(total, 2000))]
             ];
             
             const ws = XLSX.utils.aoa_to_sheet(data);
