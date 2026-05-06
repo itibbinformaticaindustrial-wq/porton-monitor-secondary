@@ -2,9 +2,12 @@ class SistemaNotificaciones {
     constructor() {
         this.permisoPush = false;
         this.notificacionesPendientes = [];
+        // ✅ CORREGIDO: 4 sonidos diferentes
         this.sonidos = {
-            abrir: new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3'),
-            alerta: new Audio('https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3')
+            abrir: new Audio('https://cdn.freesound.org/previews/15/15419_45698-lq.mp3'),
+            cerrar: new Audio('https://cdn.freesound.org/previews/423/423774_8326967-lq.mp3'),
+            mantenimiento: new Audio('https://cdn.freesound.org/previews/629/629312_13885154-lq.mp3'),
+            emergencia: new Audio('https://cdn.freesound.org/previews/532/532821_10949077-lq.mp3')
         };
         this.cargarConfiguracion();
         this.solicitarPermisoPush();
@@ -102,7 +105,7 @@ class SistemaNotificaciones {
         const toast = document.createElement('div');
         toast.className = `notification-toast ${tipo}`;
         toast.innerHTML = `
-            <span class="toast-icon">${tipo === 'alert' ? '⚠️' : tipo === 'warning' ? '🔔' : 'ℹ️'}</span>
+            <span class="toast-icon">${tipo === 'emergencia' ? '🚨' : tipo === 'warning' ? '⚠️' : tipo === 'info' ? 'ℹ️' : '🔔'}</span>
             <div>
                 <strong>${titulo}</strong><br>
                 <small>${cuerpo}</small>
@@ -117,9 +120,33 @@ class SistemaNotificaciones {
         }, 5000);
     }
 
+    // ✅ CORREGIDO: Reproducir sonido según el tipo de evento
     reproducirSonido(tipo) {
-        const sonido = tipo === 'alert' ? this.sonidos.alerta : this.sonidos.abrir;
-        sonido.play().catch(e => console.log('Error reproduciendo sonido:', e));
+        let sonido = null;
+        
+        switch(tipo) {
+            case 'abrir':
+                sonido = this.sonidos.abrir;
+                break;
+            case 'cerrar':
+                sonido = this.sonidos.cerrar;
+                break;
+            case 'mantenimiento':
+            case 'warning':
+                sonido = this.sonidos.mantenimiento;
+                break;
+            case 'emergencia':
+            case 'alert':
+                sonido = this.sonidos.emergencia;
+                break;
+            default:
+                sonido = this.sonidos.abrir;
+        }
+        
+        if (sonido) {
+            sonido.currentTime = 0; // Reiniciar si ya estaba sonando
+            sonido.play().catch(e => console.log('Error reproduciendo sonido:', e));
+        }
     }
 
     guardarNotificacion(titulo, cuerpo, tipo) {
@@ -136,13 +163,42 @@ class SistemaNotificaciones {
         localStorage.setItem('notificaciones', JSON.stringify(notificaciones));
     }
 
+    // ✅ NUEVO: Alerta de apertura
+    alertaAbrir() {
+        if (this.config.sonido) {
+            this.reproducirSonido('abrir');
+        }
+        this.enviarNotificacion('Portón Abriendo', 'El portón se está abriendo', 'info');
+    }
+
+    // ✅ NUEVO: Alerta de cierre
+    alertaCerrar() {
+        if (this.config.sonido) {
+            this.reproducirSonido('cerrar');
+        }
+        this.enviarNotificacion('Portón Cerrando', 'El portón se está cerrando', 'info');
+    }
+
+    // ✅ MODIFICADO: Alerta de mantenimiento
     alertaMantenimiento(mensaje) {
         if (this.config.mantenimiento) {
+            this.reproducirSonido('mantenimiento');
             this.enviarNotificacion('Mantenimiento Requerido', mensaje, 'warning');
         }
     }
 
+    // ✅ NUEVO: Alerta de emergencia
+    alertaEmergencia(mensaje) {
+        this.reproducirSonido('emergencia');
+        this.enviarNotificacion('🚨 EMERGENCIA 🚨', mensaje, 'emergencia');
+    }
+
     alertaEstado(estado) {
+        if (estado === 'ABIERTO') {
+            this.alertaAbrir();
+        } else if (estado === 'CERRADO') {
+            this.alertaCerrar();
+        }
         this.enviarNotificacion('Cambio de Estado', `El portón está ${estado}`, 'info');
     }
 
@@ -150,8 +206,8 @@ class SistemaNotificaciones {
         if (!this.config.email || !this.config.emailDestino) return;
         
         const stats = {
-            totalCiclos: mantenimiento.ciclos.total,
-            ciclosSemana: mantenimiento.obtenerCiclosPorDia(7).reduce((a,b) => a + b[1], 0),
+            totalCiclos: typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0,
+            ciclosSemana: typeof mantenimiento !== 'undefined' ? mantenimiento.obtenerCiclosPorDia(7).reduce((a,b) => a + b[1], 0) : 0,
             alertas: JSON.parse(localStorage.getItem('notificaciones') || '[]').slice(0, 10),
             salud: document.getElementById('healthPercent')?.textContent || '100'
         };
@@ -163,6 +219,18 @@ class SistemaNotificaciones {
 function testNotification() {
     if (typeof notificaciones !== 'undefined') {
         notificaciones.enviarNotificacion('Prueba', 'Las notificaciones funcionan correctamente', 'info');
+    }
+}
+
+function testEmergencia() {
+    if (typeof notificaciones !== 'undefined') {
+        notificaciones.alertaEmergencia('Prueba de emergencia - ¡ALERTA!');
+    }
+}
+
+function testMantenimiento() {
+    if (typeof notificaciones !== 'undefined') {
+        notificaciones.alertaMantenimiento('Prueba de mantenimiento - Revisión programada');
     }
 }
 
