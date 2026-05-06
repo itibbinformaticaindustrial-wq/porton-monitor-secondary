@@ -1,7 +1,7 @@
 // ============================================================
 // maintenance.js - Sistema de Mantenimiento SmartGate
-// ITIBB - Informática Industrial - v2.1
-// Integrado con Supabase para historial real
+// ITIBB - Informática Industrial - v3.0
+// CORREGIDO: Ahora usa Supabase como fuente principal
 // ============================================================
 
 class SistemaMantenimiento {
@@ -12,6 +12,7 @@ class SistemaMantenimiento {
         this.alertas = [];
         this.historialMantenimiento = this.cargarHistorialMantenimiento();
         this.ultimoEstadoPorton = null;
+        this.cargarHistorialDesdeSupabase(); // ✅ NUEVO: Cargar datos al iniciar
     }
 
     cargarCiclos() {
@@ -34,6 +35,60 @@ class SistemaMantenimiento {
     guardarHistorialMantenimiento() {
         localStorage.setItem('porton_historial_mantenimiento',
             JSON.stringify(this.historialMantenimiento));
+    }
+
+    // ✅ NUEVO: Cargar historial desde Supabase
+    async cargarHistorialDesdeSupabase() {
+        try {
+            const SUPABASE_URL = 'https://zdwonipaqrixxgfhxjjt.supabase.co';
+            const SUPABASE_KEY = 'sb_publishable_hAfw0kf-IxPbIzd9y3nThw_nwoDZf-P';
+            
+            const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/obtener_resumen`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'apikey': SUPABASE_KEY,
+                    'Authorization': 'Bearer ' + SUPABASE_KEY
+                },
+                body: '{}'
+            });
+            const data = await res.json();
+            
+            if (data && data.ultimos_dias && data.ultimos_dias.length > 0) {
+                // Convertir formato de Supabase a formato local
+                this.ciclos.historial = data.ultimos_dias.map(dia => ({
+                    fecha: dia.fecha,
+                    timestamp: dia.fecha,
+                    ciclos: dia.ciclos
+                }));
+                this.ciclos.total = data.total_acumulado || 0;
+                this.ciclos.hoy = data.ciclos_hoy || 0;
+                this.guardarCiclos();
+                
+                console.log('✅ Historial cargado desde Supabase:', this.ciclos.historial.length, 'días');
+                console.log('📊 Total acumulado:', this.ciclos.total);
+                console.log('📊 Ciclos hoy:', this.ciclos.hoy);
+                
+                // Actualizar UI y gráficos
+                this.actualizarSaludSistema();
+                this.actualizarPredicciones();
+                this.verificarAlertasMantenimiento();
+                
+                if (typeof actualizarGraficos === 'function') {
+                    actualizarGraficos();
+                }
+                if (typeof actualizarEstadisticas === 'function') {
+                    actualizarEstadisticas();
+                }
+            }
+        } catch (e) {
+            console.warn('⚠️ Error cargando historial desde Supabase:', e);
+        }
+    }
+
+    // ✅ NUEVO: Sincronizar con Supabase periódicamente
+    async sincronizarConSupabase() {
+        await this.cargarHistorialDesdeSupabase();
     }
 
     procesarCambioEstado(nuevoEstado) {
@@ -160,7 +215,6 @@ class SistemaMantenimiento {
         this.historialMantenimiento.unshift(registro);
         this.guardarHistorialMantenimiento();
 
-        // Guardar también en Supabase
         if (typeof guardarMantenimientoSupabase === 'function') {
             await guardarMantenimientoSupabase(tipo, notas || `Automático en ${ciclosEnMantenimiento} ciclos`);
         }
@@ -231,7 +285,6 @@ class SistemaMantenimiento {
         const tbody = document.getElementById('maintenanceHistoryBody');
         if (!tbody) return;
 
-        // Intentar cargar desde Supabase primero
         let historial = this.historialMantenimiento;
         if (typeof leerMantenimientosSupabase === 'function') {
             const supabaseData = await leerMantenimientosSupabase(50);
@@ -260,23 +313,34 @@ class SistemaMantenimiento {
             </tr>`).join('');
     }
 
-    // ── Datos para gráficos ───────────────────────────────────
+    // ── Datos para gráficos (CORREGIDOS - usan historial real) ──
     obtenerCiclosPorDia(dias = 7) {
         const diario = {};
+        
+        // Inicializar los últimos 'dias' días con 0
         for (let i = 0; i < dias; i++) {
-            const f = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
-            diario[f] = 0;
+            const fecha = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
+            diario[fecha] = 0;
         }
+        
+        // Sumar ciclos del historial
         this.ciclos.historial.forEach(c => {
-            if (diario[c.fecha] !== undefined) diario[c.fecha]++;
+            if (diario[c.fecha] !== undefined) {
+                diario[c.fecha] += c.ciclos || 1;
+            }
         });
+        
         return Object.entries(diario).reverse();
     }
 
     obtenerCiclosPorHora() {
         const porHora = Array(24).fill(0);
+        // Si hay timestamp real, usarlo; si no, datos por defecto
         this.ciclos.historial.forEach(c => {
-            porHora[new Date(c.timestamp).getHours()]++;
+            if (c.timestamp && c.timestamp !== c.fecha) {
+                const hora = new Date(c.timestamp).getHours();
+                if (!isNaN(hora)) porHora[hora] += (c.ciclos || 1);
+            }
         });
         return porHora;
     }
@@ -285,21 +349,35 @@ class SistemaMantenimiento {
         const mensual = {};
         this.ciclos.historial.forEach(c => {
             const mes = c.fecha.substring(0, 7);
-            mensual[mes] = (mensual[mes] || 0) + 1;
+            mensual[mes] = (mensual[mes] || 0) + (c.ciclos || 1);
         });
         return Object.entries(mensual).slice(-6);
     }
 
     obtenerCiclosHoy() {
         const hoy = new Date().toISOString().split('T')[0];
-        return this.ciclos.historial.filter(c => c.fecha === hoy).length;
+        let total = 0;
+        this.ciclos.historial.forEach(c => {
+            if (c.fecha === hoy) {
+                total += c.ciclos || 1;
+            }
+        });
+        return total;
     }
 
     obtenerTendenciaSemanal() {
-        return this.obtenerCiclosHoy() -
-            this.ciclos.historial.filter(c =>
-                c.fecha === new Date(Date.now() - 86400000).toISOString().split('T')[0]
-            ).length;
+        const hoy = new Date().toISOString().split('T')[0];
+        const ayer = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+        
+        let ciclosHoy = 0;
+        let ciclosAyer = 0;
+        
+        this.ciclos.historial.forEach(c => {
+            if (c.fecha === hoy) ciclosHoy += c.ciclos || 1;
+            if (c.fecha === ayer) ciclosAyer += c.ciclos || 1;
+        });
+        
+        return ciclosHoy - ciclosAyer;
     }
 }
 
@@ -326,7 +404,6 @@ async function resetearContadorUI() {
             alert(`✅ Contador reseteado.\nCiclos antes del reset: ${resultado.ciclos_antes}\nMotivo: ${motivo}`);
         }
     } else {
-        // Fallback solo local
         mantenimiento.ciclos.total = 0;
         mantenimiento.guardarCiclos();
         alert('✅ Contador reseteado localmente (Supabase no disponible)');
@@ -341,11 +418,20 @@ function programarGuardadoDiario() {
     ) - ahora;
     setTimeout(() => {
         if (typeof leerResumenSupabase === 'function') leerResumenSupabase();
+        if (typeof mantenimiento !== 'undefined') mantenimiento.sincronizarConSupabase();
         setInterval(() => {
             if (typeof leerResumenSupabase === 'function') leerResumenSupabase();
+            if (typeof mantenimiento !== 'undefined') mantenimiento.sincronizarConSupabase();
         }, 24 * 60 * 60 * 1000);
     }, msHastaMedianoche);
 }
+
+// Programar sincronización cada 5 minutos
+setInterval(() => {
+    if (typeof mantenimiento !== 'undefined') {
+        mantenimiento.sincronizarConSupabase();
+    }
+}, 5 * 60 * 1000);
 
 programarGuardadoDiario();
 const mantenimiento = new SistemaMantenimiento();
