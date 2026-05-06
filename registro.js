@@ -1,3 +1,8 @@
+// ============================================================
+// registro.js - SMARTGATE
+// VERSIÓN CORREGIDA: Usa datos de Supabase para gráficos
+// ============================================================
+
 class RegistroEventos {
     constructor() {
         this.eventos = this.cargarEventos();
@@ -91,28 +96,26 @@ class RegistroEventos {
         }
         
         const tendenciaSpan = document.getElementById('trendWeek');
-        if (tendenciaSpan) {
+        if (tendenciaSpan && typeof mantenimiento !== 'undefined') {
             const tendencia = mantenimiento.obtenerTendenciaSemanal();
             tendenciaSpan.textContent = `${tendencia >= 0 ? '+' : ''}${tendencia} esta semana`;
             tendenciaSpan.style.color = tendencia >= 0 ? '#10b981' : '#ef4444';
         }
         
-        // Ciclos totales (prioridad: Supabase > mantenimiento)
         const totalCyclesSpan = document.getElementById('totalCycles');
         if (totalCyclesSpan) {
             if (typeof globalTotalAcumulado !== 'undefined' && globalTotalAcumulado > 0) {
                 totalCyclesSpan.textContent = globalTotalAcumulado;
-            } else {
+            } else if (typeof mantenimiento !== 'undefined') {
                 totalCyclesSpan.textContent = mantenimiento.ciclos.total;
             }
         }
         
-        // Ciclos hoy (prioridad: globalCiclosHoy > mantenimiento)
         const todayCyclesSpan = document.getElementById('todayCycles');
         if (todayCyclesSpan) {
-            if (typeof globalCiclosHoy !== 'undefined' && globalCiclosHoy !== null) {
+            if (typeof globalCiclosHoy !== 'undefined' && globalCiclosHoy !== null && globalCiclosHoy > 0) {
                 todayCyclesSpan.textContent = globalCiclosHoy;
-            } else {
+            } else if (typeof mantenimiento !== 'undefined') {
                 todayCyclesSpan.textContent = mantenimiento.obtenerCiclosHoy();
             }
         }
@@ -125,7 +128,7 @@ class RegistroEventos {
         const filtrados = this.filtrarEventos();
         
         if (filtrados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4">No hay eventos registrados</td>' + '</tr>';
+            tbody.innerHTML = '<tr><td colspan="4">No hay eventos registrados</td></tr>';
             return;
         }
         
@@ -221,11 +224,11 @@ class RegistroEventos {
     exportarJSON() {
         const datos = {
             fechaExportacion: new Date().toISOString(),
-            totalCiclos: mantenimiento.ciclos.total,
+            totalCiclos: typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0,
             totalEventos: this.eventos.length,
-            historialMantenimiento: mantenimiento.historialMantenimiento,
+            historialMantenimiento: typeof mantenimiento !== 'undefined' ? mantenimiento.historialMantenimiento : [],
             eventos: this.eventos,
-            ciclos: mantenimiento.ciclos.historial
+            ciclos: typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.historial : []
         };
         
         const blob = new Blob([JSON.stringify(datos, null, 2)], { type: 'application/json' });
@@ -240,14 +243,16 @@ class RegistroEventos {
     limpiarDatos() {
         if (confirm('⚠️ ¿Está seguro? Esta acción eliminará TODOS los datos registrados. No se puede deshacer.')) {
             this.eventos = [];
-            mantenimiento.ciclos = { total: 0, historial: [], ultimoMantenimiento: null, predicciones: {} };
-            mantenimiento.historialMantenimiento = [];
-            mantenimiento.guardarCiclos();
-            mantenimiento.guardarHistorialMantenimiento();
+            if (typeof mantenimiento !== 'undefined') {
+                mantenimiento.ciclos = { total: 0, historial: [], ultimoMantenimiento: null, predicciones: {} };
+                mantenimiento.historialMantenimiento = [];
+                mantenimiento.guardarCiclos();
+                mantenimiento.guardarHistorialMantenimiento();
+                mantenimiento.verificarAlertasMantenimiento();
+            }
             this.guardarEventos();
             this.actualizarTablaHistorial();
             document.getElementById('activityTimeline').innerHTML = '<div class="empty-state">Esperando actividad del portón...</div>';
-            mantenimiento.verificarAlertasMantenimiento();
             actualizarEstadisticas();
             actualizarGraficos();
         }
@@ -266,9 +271,12 @@ function refreshData() {
 }
 function filterHistory() { registro.actualizarTablaHistorial(); }
 function resetFilters() {
-    document.getElementById('dateFrom').value = '';
-    document.getElementById('dateTo').value = '';
-    document.getElementById('eventTypeFilter').value = 'all';
+    const dateFrom = document.getElementById('dateFrom');
+    const dateTo = document.getElementById('dateTo');
+    const eventTypeFilter = document.getElementById('eventTypeFilter');
+    if (dateFrom) dateFrom.value = '';
+    if (dateTo) dateTo.value = '';
+    if (eventTypeFilter) eventTypeFilter.value = 'all';
     registro.actualizarTablaHistorial();
 }
 
@@ -277,22 +285,28 @@ function actualizarEstadisticas() {
     if (totalCyclesSpan) {
         if (typeof globalTotalAcumulado !== 'undefined' && globalTotalAcumulado > 0) {
             totalCyclesSpan.textContent = globalTotalAcumulado;
-        } else {
+        } else if (typeof mantenimiento !== 'undefined') {
             totalCyclesSpan.textContent = mantenimiento.ciclos.total;
         }
     }
     
     const todayCyclesSpan = document.getElementById('todayCycles');
     if (todayCyclesSpan) {
-        if (typeof globalCiclosHoy !== 'undefined' && globalCiclosHoy !== null) {
+        if (typeof globalCiclosHoy !== 'undefined' && globalCiclosHoy !== null && globalCiclosHoy > 0) {
             todayCyclesSpan.textContent = globalCiclosHoy;
-        } else {
+        } else if (typeof mantenimiento !== 'undefined') {
             todayCyclesSpan.textContent = mantenimiento.obtenerCiclosHoy();
         }
     }
     
-    mantenimiento.actualizarPredicciones();
+    if (typeof mantenimiento !== 'undefined') {
+        mantenimiento.actualizarPredicciones();
+    }
 }
+
+// ============================================================
+// GRÁFICOS - VERSIÓN CORREGIDA (usando Supabase cuando sea posible)
+// ============================================================
 
 let graficoDiario, graficoPorHora, graficoProyeccion, graficoMeta, graficoMensual, graficoComparacion, graficoTendencia;
 
@@ -317,7 +331,7 @@ function inicializarGraficos() {
         graficoPorHora = new Chart(ctx2, {
             type: 'line',
             data: { labels: Array.from({length: 24}, (_, i) => `${i}:00`), datasets: [{ label: 'Actividad', data: Array(24).fill(0), borderColor: '#764ba2', backgroundColor: 'rgba(118,75,162,0.1)', fill: true, tension: 0.4 }] },
-            options: { responsive: true, maintainAspectRatio: true }
+            options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { position: 'top' } } }
         });
     }
     
@@ -362,45 +376,78 @@ function inicializarGraficos() {
     }
 }
 
+// ✅ CORREGIDO: Ahora usa datos sincronizados
 function actualizarGraficos() {
     const dias = parseInt(document.getElementById('daysRange')?.value || 7);
-    const datosDiarios = mantenimiento.obtenerCiclosPorDia(dias);
-    if (graficoDiario) {
-        graficoDiario.data.labels = datosDiarios.map(d => d[0].substring(5));
-        graficoDiario.data.datasets[0].data = datosDiarios.map(d => d[1]);
-        graficoDiario.update();
+    
+    // Gráfico Diario
+    if (graficoDiario && typeof mantenimiento !== 'undefined') {
+        const datosDiarios = mantenimiento.obtenerCiclosPorDia(dias);
+        if (datosDiarios && datosDiarios.length > 0) {
+            graficoDiario.data.labels = datosDiarios.map(d => d[0].substring(5));
+            graficoDiario.data.datasets[0].data = datosDiarios.map(d => d[1]);
+            graficoDiario.update();
+        }
     }
     
-    const datosPorHora = mantenimiento.obtenerCiclosPorHora();
+    // Gráfico por Hora (CONSOLIDADO desde Supabase)
     if (graficoPorHora) {
-        graficoPorHora.data.datasets[0].data = datosPorHora;
-        graficoPorHora.update();
+        // Intentar obtener datos de Supabase si está disponible
+        if (typeof obtenerCiclosPorHoraDesdeSupabase === 'function') {
+            obtenerCiclosPorHoraDesdeSupabase().then(datos => {
+                if (datos && datos.length > 0) {
+                    const datosPorHora = Array(24).fill(0);
+                    datos.forEach(item => {
+                        if (item.hora >= 0 && item.hora < 24) {
+                            datosPorHora[item.hora] = item.ciclos;
+                        }
+                    });
+                    graficoPorHora.data.datasets[0].data = datosPorHora;
+                    graficoPorHora.update();
+                }
+            });
+        } else if (typeof mantenimiento !== 'undefined') {
+            const datosPorHora = mantenimiento.obtenerCiclosPorHora();
+            if (datosPorHora) {
+                graficoPorHora.data.datasets[0].data = datosPorHora;
+                graficoPorHora.update();
+            }
+        }
     }
     
-    const datosMensuales = mantenimiento.obtenerEstadisticasMensuales();
-    if (graficoMensual) {
-        graficoMensual.data.labels = datosMensuales.map(m => m[0]);
-        graficoMensual.data.datasets[0].data = datosMensuales.map(m => m[1]);
-        graficoMensual.update();
+    // Gráfico Mensual
+    if (graficoMensual && typeof mantenimiento !== 'undefined') {
+        const datosMensuales = mantenimiento.obtenerEstadisticasMensuales();
+        if (datosMensuales && datosMensuales.length > 0) {
+            graficoMensual.data.labels = datosMensuales.map(m => m[0]);
+            graficoMensual.data.datasets[0].data = datosMensuales.map(m => m[1]);
+            graficoMensual.update();
+        }
     }
     
-    if (graficoMeta) {
-        const progreso = mantenimiento.ciclos.total % 500;
+    // Gráfico Meta (500 ciclos)
+    if (graficoMeta && typeof mantenimiento !== 'undefined') {
+        const total = mantenimiento.ciclos.total;
+        const progreso = total % 500;
         graficoMeta.data.datasets[0].data = [progreso, 500 - progreso];
         graficoMeta.update();
     }
     
-    if (graficoProyeccion) {
+    // Gráfico Proyección
+    if (graficoProyeccion && typeof mantenimiento !== 'undefined') {
         const ultimos7 = mantenimiento.obtenerCiclosPorDia(7);
-        const promedios = ultimos7.map(d => d[1]);
-        const promedio = promedios.reduce((a,b) => a+b, 0) / promedios.length;
-        const proyeccion = [0, promedio, promedio*2, promedio*3, promedio*4];
-        graficoProyeccion.data.labels = ['Hoy', 'Semana 1', 'Semana 2', 'Semana 3', 'Semana 4'];
-        graficoProyeccion.data.datasets[0].data = proyeccion;
-        graficoProyeccion.update();
+        if (ultimos7 && ultimos7.length > 0) {
+            const promedios = ultimos7.map(d => d[1]);
+            const promedio = promedios.reduce((a,b) => a+b, 0) / promedios.length;
+            const proyeccion = [0, promedio, promedio*2, promedio*3, promedio*4];
+            graficoProyeccion.data.labels = ['Hoy', 'Semana 1', 'Semana 2', 'Semana 3', 'Semana 4'];
+            graficoProyeccion.data.datasets[0].data = proyeccion;
+            graficoProyeccion.update();
+        }
     }
     
-    if (graficoComparacion) {
+    // Gráfico Comparación Semanal
+    if (graficoComparacion && typeof mantenimiento !== 'undefined' && mantenimiento.ciclos.historial) {
         const semanas = [[], [], [], []];
         mantenimiento.ciclos.historial.slice(-28).forEach(ciclo => {
             const semana = Math.floor((new Date() - new Date(ciclo.fecha)) / (7*24*60*60*1000));
@@ -410,58 +457,86 @@ function actualizarGraficos() {
         graficoComparacion.update();
     }
     
-    if (graficoTendencia) {
+    // Gráfico Tendencia
+    if (graficoTendencia && typeof mantenimiento !== 'undefined') {
         const ultimos30 = mantenimiento.obtenerCiclosPorDia(30);
-        graficoTendencia.data.labels = ultimos30.map(d => d[0].substring(5));
-        graficoTendencia.data.datasets[0].data = ultimos30.map(d => d[1]);
-        graficoTendencia.update();
+        if (ultimos30 && ultimos30.length > 0) {
+            graficoTendencia.data.labels = ultimos30.map(d => d[0].substring(5));
+            graficoTendencia.data.datasets[0].data = ultimos30.map(d => d[1]);
+            graficoTendencia.update();
+        }
     }
 }
+
+// ============================================================
+// NAVEGACIÓN
+// ============================================================
 
 document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', (e) => {
         e.preventDefault();
         const vista = item.dataset.view;
         document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-        document.getElementById(`${vista}View`).classList.add('active');
+        const vistaElement = document.getElementById(`${vista}View`);
+        if (vistaElement) vistaElement.classList.add('active');
         document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
         item.classList.add('active');
         
         if (vista === 'analytics') actualizarGraficos();
         if (vista === 'history') registro.actualizarTablaHistorial();
-        if (vista === 'maintenance') mantenimiento.actualizarSaludSistema();
+        if (vista === 'maintenance' && typeof mantenimiento !== 'undefined') mantenimiento.actualizarSaludSistema();
         
         if (window.innerWidth <= 1024) {
-            document.getElementById('sidebar').classList.add('closed');
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) sidebar.classList.add('closed');
         }
     });
 });
 
-document.getElementById('openSidebar')?.addEventListener('click', () => {
-    document.getElementById('sidebar').classList.remove('closed');
-});
+const openSidebarBtn = document.getElementById('openSidebar');
+const closeSidebarBtn = document.getElementById('closeSidebar');
 
-document.getElementById('closeSidebar')?.addEventListener('click', () => {
-    document.getElementById('sidebar').classList.add('closed');
-});
+if (openSidebarBtn) {
+    openSidebarBtn.addEventListener('click', () => {
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar) sidebar.classList.remove('closed');
+    });
+}
+
+if (closeSidebarBtn) {
+    closeSidebarBtn.addEventListener('click', () => {
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar) sidebar.classList.add('closed');
+    });
+}
 
 document.addEventListener('click', (e) => {
     if (window.innerWidth <= 1024) {
         const sidebar = document.getElementById('sidebar');
         const openBtn = document.getElementById('openSidebar');
-        if (!sidebar.contains(e.target) && !openBtn.contains(e.target) && !sidebar.classList.contains('closed')) {
+        if (sidebar && openBtn && !sidebar.contains(e.target) && !openBtn.contains(e.target) && !sidebar.classList.contains('closed')) {
             sidebar.classList.add('closed');
         }
     }
 });
 
+// ============================================================
+// INICIALIZACIÓN
+// ============================================================
+
 document.addEventListener('DOMContentLoaded', () => {
     inicializarGraficos();
     actualizarEstadisticas();
     actualizarGraficos();
-    mantenimiento.actualizarSaludSistema();
-    mantenimiento.verificarAlertasMantenimiento();
+    if (typeof mantenimiento !== 'undefined') {
+        mantenimiento.actualizarSaludSistema();
+        mantenimiento.verificarAlertasMantenimiento();
+    }
 });
+
+// ============================================================
+// FUNCIONES GLOBALES
+// ============================================================
 
 function toggleDarkMode() {
     document.body.classList.toggle('dark-mode');
@@ -486,29 +561,39 @@ function changeColorTheme(theme) {
     }
 }
 
+// Cargar tema guardado
 if (localStorage.getItem('dark_mode') === 'true') {
     document.body.classList.add('dark-mode');
 }
 
-const theme = localStorage.getItem('color_theme') || 'default';
-const themeSelect = document.getElementById('colorTheme');
-if (themeSelect) {
-    themeSelect.value = theme;
-    changeColorTheme(theme);
+const themeSaved = localStorage.getItem('color_theme') || 'default';
+const themeSelectEl = document.getElementById('colorTheme');
+if (themeSelectEl) {
+    themeSelectEl.value = themeSaved;
+    changeColorTheme(themeSaved);
 }
 
-document.getElementById('darkModeToggle')?.addEventListener('change', (e) => {
-    if (e.target.checked && !document.body.classList.contains('dark-mode')) toggleDarkMode();
-    else if (!e.target.checked && document.body.classList.contains('dark-mode')) toggleDarkMode();
-});
+// Event listeners de configuración
+const darkModeToggle = document.getElementById('darkModeToggle');
+if (darkModeToggle) {
+    darkModeToggle.addEventListener('change', (e) => {
+        if (e.target.checked && !document.body.classList.contains('dark-mode')) toggleDarkMode();
+        else if (!e.target.checked && document.body.classList.contains('dark-mode')) toggleDarkMode();
+    });
+}
 
-document.getElementById('colorTheme')?.addEventListener('change', (e) => {
-    localStorage.setItem('color_theme', e.target.value);
-    changeColorTheme(e.target.value);
-});
+const colorThemeSelect = document.getElementById('colorTheme');
+if (colorThemeSelect) {
+    colorThemeSelect.addEventListener('change', (e) => {
+        localStorage.setItem('color_theme', e.target.value);
+        changeColorTheme(e.target.value);
+    });
+}
 
 function updateDailyGoal() {
-    const goal = document.getElementById('dailyGoal').value;
+    const goalInput = document.getElementById('dailyGoal');
+    if (!goalInput) return;
+    const goal = goalInput.value;
     localStorage.setItem('daily_goal', goal);
     const sub = document.querySelector('.kpi-sub');
     if (sub && sub.textContent.includes('Meta:')) {
@@ -522,5 +607,28 @@ function clearAllData() {
         localStorage.clear();
         alert('Todos los datos han sido eliminados. La página se recargará.');
         location.reload();
+    }
+}
+
+// Función para obtener datos de hora desde Supabase (para el gráfico)
+async function obtenerCiclosPorHoraDesdeSupabase() {
+    try {
+        const SUPABASE_URL = 'https://zdwonipaqrixxgfhxjjt.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_hAfw0kf-IxPbIzd9y3nThw_nwoDZf-P';
+        
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/obtener_ciclos_por_hora`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_KEY,
+                'Authorization': 'Bearer ' + SUPABASE_KEY
+            },
+            body: JSON.stringify({})
+        });
+        const data = await res.json();
+        return data || [];
+    } catch (e) {
+        console.warn('⚠️ Error obteniendo ciclos por hora:', e);
+        return [];
     }
 }
