@@ -1,13 +1,13 @@
 // ============================================================
 // mqtt-client.js - Página Secundaria SmartGate Monitor
 // ITIBB - Informática Industrial
-// VERSIÓN CORREGIDA: Usa SOLO Supabase como fuente de verdad
+// VERSIÓN FINAL: SOLO LECTURA - No calcula fechas
 // ============================================================
 
 let globalCiclosHoy = 0;
 let globalTotalAcumulado = 0;
 
-// Variables para acumulador local (solo respaldo)
+// Variables para respaldo local (NO se usan para mostrar)
 let contadorLocalAcumulado = 0;
 let ultimoValorESP32 = null;
 let fechaActualLocal = new Date().toISOString().split('T')[0];
@@ -48,7 +48,7 @@ function sbHeaders() {
 }
 
 // ── Leer resumen completo desde la función SQL ──────────────
-// ✅ CORREGIDO: Usar SOLO los datos de Supabase, NO calcular fechas localmente
+// ✅ SOLO LECTURA - No calcula fechas, usa lo que viene de Supabase
 async function leerResumenSupabase() {
     try {
         const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/obtener_resumen`, {
@@ -58,7 +58,7 @@ async function leerResumenSupabase() {
         });
         const data = await res.json();
 
-        // ✅ Usar los valores DIRECTOS de Supabase
+        // ✅ Usar los valores DIRECTOS de Supabase (ella ya tiene la fecha correcta)
         globalTotalAcumulado = data.total_acumulado || 0;
         globalCiclosHoy = data.ciclos_hoy || 0;
 
@@ -69,7 +69,7 @@ async function leerResumenSupabase() {
         const mesEl = document.getElementById('monthCycles');
 
         if (totalEl) totalEl.textContent = globalTotalAcumulado;
-        if (hoyEl) hoyEl.textContent = globalCiclosHoy;  // ✅ Usar valor de Supabase
+        if (hoyEl) hoyEl.textContent = globalCiclosHoy;
         if (semanaEl) semanaEl.textContent = data.ciclos_semana || 0;
         if (mesEl) mesEl.textContent = data.ciclos_mes || 0;
 
@@ -83,15 +83,16 @@ async function leerResumenSupabase() {
         if (typeof actualizarEstadisticas === 'function') actualizarEstadisticas();
         if (typeof actualizarGraficos === 'function') actualizarGraficos();
 
-        console.log('📊 Resumen Supabase:', data);
-        console.log('📊 Ciclos hoy (desde Supabase):', globalCiclosHoy);
+        console.log('📊 Total acumulado (Supabase):', globalTotalAcumulado);
+        console.log('📊 Ciclos hoy (Supabase):', globalCiclosHoy);
     } catch (e) {
         console.warn('⚠️ Error leyendo resumen Supabase:', e);
     }
 }
 
-// ── Registrar ciclos del día en Supabase ──
+// ── Registrar ciclos del día en Supabase (SOLO para respaldo) ──
 async function registrarCiclosEnSupabase(ciclosHoy, fecha = null) {
+    // ⚠️ Esta función SOLO se usa para respaldo, no para mostrar datos
     const fechaRegistro = fecha || new Date().toISOString().split('T')[0];
     
     try {
@@ -116,7 +117,7 @@ async function registrarCiclosEnSupabase(ciclosHoy, fecha = null) {
     return null;
 }
 
-// ── Guardado diferido ──
+// ── Guardado diferido (SOLO respaldo) ──
 function programarGuardadoDiferido() {
     if (timeoutGuardadoPendiente) {
         clearTimeout(timeoutGuardadoPendiente);
@@ -131,7 +132,7 @@ function programarGuardadoDiferido() {
     }, 10000);
 }
 
-// ── Verificar cambio de día ──
+// ── Verificar cambio de día (SOLO para respaldo) ──
 function verificarCambioDeDia() {
     const hoy = new Date().toISOString().split('T')[0];
     
@@ -148,8 +149,8 @@ function verificarCambioDeDia() {
         localStorage.setItem('contador_local_fecha', hoy);
         localStorage.setItem('porton_ciclos_hoy', 0);
         
-        const hoyEl = document.getElementById('todayCycles');
-        if (hoyEl) hoyEl.textContent = '0';
+        // NO actualizar la UI con 0, esperar a Supabase
+        // La UI se actualizará con leerResumenSupabase()
         
         if (typeof notificaciones !== 'undefined') {
             notificaciones.enviarNotificacion(
@@ -161,7 +162,7 @@ function verificarCambioDeDia() {
     }
 }
 
-// ── Inicializar contador local ──
+// ── Inicializar contador local (SOLO respaldo) ──
 function inicializarContadorLocal() {
     const fechaGuardada = localStorage.getItem('contador_local_fecha');
     const hoy = new Date().toISOString().split('T')[0];
@@ -186,7 +187,7 @@ function inicializarContadorLocal() {
     return contadorLocalAcumulado;
 }
 
-// ── Actualizar contador local con validación ──
+// ── Actualizar contador local (SOLO para respaldo) ──
 function actualizarContadorLocal(nuevoValorESP32) {
     const hoy = new Date().toISOString().split('T')[0];
     
@@ -224,8 +225,8 @@ function actualizarContadorLocal(nuevoValorESP32) {
         localStorage.setItem('porton_ciclos_hoy', contadorLocalAcumulado);
         localStorage.setItem('ultimo_valor_esp32', nuevoValorESP32);
         
-        const hoyEl = document.getElementById('todayCycles');
-        if (hoyEl) hoyEl.textContent = contadorLocalAcumulado;
+        // ✅ NO actualizar la UI aquí, esperar a Supabase
+        // La UI se actualizará con leerResumenSupabase()
         
         if (typeof registro !== 'undefined') {
             registro.agregarEvento('CONTADOR', { 
@@ -277,6 +278,7 @@ async function resetearContadorSupabase(motivo = 'Reset manual', realizadoPor = 
             localStorage.setItem('contador_local_acumulado', 0);
             localStorage.setItem('porton_ciclos_hoy', 0);
             
+            // Actualizar UI con 0
             const totalEl = document.getElementById('totalCycles');
             const hoyEl = document.getElementById('todayCycles');
             if (totalEl) totalEl.textContent = '0';
@@ -385,11 +387,9 @@ function updateMQTTStatus(connected) {
 }
 
 // ============================================================
-// HANDLER MODIFICADO
+// HANDLER - Solo registra eventos, NO actualiza UI directamente
 // ============================================================
 function handleMQTTMessage(topic, data) {
-    const hoy = new Date().toISOString().split('T')[0];
-
     switch (topic) {
         case 'porton/estado':
             const stateEl = document.getElementById('currentState');
@@ -426,13 +426,11 @@ function handleMQTTMessage(topic, data) {
                 const valorRecibido = parseInt(data.ciclos);
                 console.log(`📊 Valor recibido del ESP32: ${valorRecibido} ciclos`);
                 
-                const nuevoTotal = actualizarContadorLocal(valorRecibido);
-                globalCiclosHoy = nuevoTotal;
+                // Solo actualizar respaldo local, NO la UI principal
+                actualizarContadorLocal(valorRecibido);
                 
-                const todayEl = document.getElementById('todayCycles');
-                if (todayEl) todayEl.textContent = nuevoTotal;
-                
-                localStorage.setItem('porton_ciclos_hoy', nuevoTotal);
+                // Guardar en localStorage
+                const hoy = new Date().toISOString().split('T')[0];
                 localStorage.setItem('ultima_fecha_contador', hoy);
                 localStorage.setItem('ultimo_valor_contador', valorRecibido);
                 localStorage.setItem('ultima_actualizacion', Date.now().toString());
@@ -487,22 +485,13 @@ function iniciarGuardadoPeriodico() {
 async function sincronizarAlReconectar() {
     console.log('🔄 Sincronizando datos después de reconexión...');
     await leerResumenSupabase();
-    
-    if (globalCiclosHoy > contadorLocalAcumulado) {
-        console.log(`🔄 Actualizando contador local desde Supabase: ${globalCiclosHoy}`);
-        contadorLocalAcumulado = globalCiclosHoy;
-        localStorage.setItem('contador_local_acumulado', contadorLocalAcumulado);
-        
-        const hoyEl = document.getElementById('todayCycles');
-        if (hoyEl) hoyEl.textContent = contadorLocalAcumulado;
-    }
 }
 
 // ============================================================
 // INICIALIZACIÓN
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('🚀 Inicializando mqtt-client.js versión corregida...');
+    console.log('🚀 Inicializando mqtt-client.js versión FINAL...');
     
     inicializarContadorLocal();
     
@@ -513,15 +502,14 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('📊 Contador local actualizado desde backup:', contadorLocalAcumulado);
     }
     
-    const hoyEl = document.getElementById('todayCycles');
-    if (hoyEl) hoyEl.textContent = contadorLocalAcumulado;
-    
     connectMQTT();
     
-    // ✅ Leer Supabase al arrancar (esto mostrará el valor correcto)
+    // ✅ LO MÁS IMPORTANTE: Leer Supabase al arrancar y periódicamente
     leerResumenSupabase();
     
+    // Actualizar cada 30 segundos desde Supabase
     setInterval(leerResumenSupabase, 30000);
+    
     iniciarGuardadoPeriodico();
     
     setInterval(() => {
@@ -539,7 +527,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     console.log('✅ mqtt-client.js inicializado correctamente');
-    console.log(`📊 Estado inicial - Contador local: ${contadorLocalAcumulado}`);
+    console.log('📊 La página muestra SOLO los datos de Supabase');
 });
 
 // Exportar funciones
