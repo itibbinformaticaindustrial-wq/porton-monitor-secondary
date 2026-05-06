@@ -1,11 +1,11 @@
 // ============================================================
-// SMARTGATE - GENERADOR DE PDF (VERSIÓN HÍBRIDA)
-// Con logos + gráficos + sin caracteres rotos
+// SMARTGATE - GENERADOR DE PDF (VERSIÓN COMPLETA)
+// Con: resumen ejecutivo, comparativa semanal, gráfico de salud, marca de agua
 // ============================================================
 
 class GeneradorPDF {
     constructor() {
-        console.log('📄 Inicializando GeneradorPDF...');
+        console.log('📄 Inicializando GeneradorPDF Mejorado...');
         this.libreriasCargadas = false;
         
         this.margen = {
@@ -15,7 +15,7 @@ class GeneradorPDF {
             derecho: 20
         };
         
-        // URLs de logos (desde localStorage o por defecto)
+        // URLs de logos
         this.urlsLogos = {
             instituto: window.location.origin + '/porton-monitor-secondary/img/logo-instituto.png',
             carrera: window.location.origin + '/porton-monitor-secondary/img/logo-carrera.webp'
@@ -58,14 +58,24 @@ class GeneradorPDF {
         });
     }
 
-    async capturarGrafico(canvasId) {
+    async capturarGrafico(canvasId, escala = 2) {
         const canvas = document.getElementById(canvasId);
         if (!canvas || canvas.width === 0 || canvas.height === 0) {
             return null;
         }
         try {
+            // Mejorar calidad del gráfico
             await new Promise(r => setTimeout(r, 200));
-            return canvas.toDataURL('image/png');
+            
+            // Crear canvas temporal con mayor resolución
+            const tempCanvas = document.createElement('canvas');
+            const ctx = tempCanvas.getContext('2d');
+            tempCanvas.width = canvas.width * escala;
+            tempCanvas.height = canvas.height * escala;
+            ctx.scale(escala, escala);
+            ctx.drawImage(canvas, 0, 0);
+            
+            return tempCanvas.toDataURL('image/png', 1.0);
         } catch (e) {
             return null;
         }
@@ -88,13 +98,32 @@ class GeneradorPDF {
         });
     }
 
+    async agregarMarcaDeAgua(doc) {
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        
+        doc.setFontSize(50);
+        doc.setTextColor(200, 200, 200);
+        doc.setFont('helvetica', 'italic');
+        
+        // Texto de marca de agua en diagonal
+        const texto = 'Ingenieria Informatica';
+        doc.saveGraphicsState();
+        doc.setGState(new doc.GState({ opacity: 0.15 }));
+        doc.text(texto, pageWidth / 2, pageHeight / 2, { 
+            align: 'center', 
+            angle: 45 
+        });
+        doc.restoreGraphicsState();
+    }
+
     async agregarEncabezadoConLogos(doc) {
         const pageWidth = doc.internal.pageSize.getWidth();
         const logoWidth = 22;
         const logoHeight = 22;
         const x = this.margen.izquierdo;
         
-        // Logo izquierdo (Instituto)
+        // Logo izquierdo
         let logoInstitutoData = null;
         try {
             if (this.logosCache.instituto) {
@@ -102,9 +131,7 @@ class GeneradorPDF {
             } else {
                 logoInstitutoData = await this.cargarImagenDesdeURL(this.urlsLogos.instituto);
             }
-        } catch(e) {
-            console.log('Logo instituto no disponible');
-        }
+        } catch(e) {}
         
         if (logoInstitutoData) {
             try {
@@ -116,7 +143,7 @@ class GeneradorPDF {
             this.dibujarTextoInstituto(doc, x, 20);
         }
         
-        // Título central
+        // Título
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 51, 102);
@@ -128,7 +155,7 @@ class GeneradorPDF {
         doc.text('Sistema Predictivo de Mantenimiento', pageWidth / 2, 26, { align: 'center' });
         doc.text('Porton Automatico', pageWidth / 2, 32, { align: 'center' });
         
-        // Logo derecho (Carrera)
+        // Logo derecho
         let logoCarreraData = null;
         try {
             if (this.logosCache.carrera) {
@@ -136,9 +163,7 @@ class GeneradorPDF {
             } else {
                 logoCarreraData = await this.cargarImagenDesdeURL(this.urlsLogos.carrera);
             }
-        } catch(e) {
-            console.log('Logo carrera no disponible');
-        }
+        } catch(e) {}
         
         if (logoCarreraData) {
             try {
@@ -150,7 +175,7 @@ class GeneradorPDF {
             this.dibujarTextoUniversidad(doc, pageWidth - this.margen.derecho - 35, 20);
         }
         
-        // Línea separadora
+        // Línea
         doc.setDrawColor(200, 200, 200);
         doc.line(x, 42, pageWidth - this.margen.derecho, 42);
         
@@ -158,10 +183,7 @@ class GeneradorPDF {
         doc.setFontSize(9);
         doc.setTextColor(120, 120, 120);
         const fechaActual = new Date().toLocaleDateString('es-ES', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
         });
         doc.text(fechaActual, pageWidth - this.margen.derecho - 5, 52, { align: 'right' });
         
@@ -182,6 +204,198 @@ class GeneradorPDF {
         doc.text('Informatica', x + 5, y + 4);
     }
 
+    // NUEVO: Resumen ejecutivo
+    async agregarResumenEjecutivo(doc, y) {
+        const x = this.margen.izquierdo;
+        const total = typeof globalTotalAcumulado !== 'undefined' ? globalTotalAcumulado : 0;
+        const hoy = typeof globalCiclosHoy !== 'undefined' ? globalCiclosHoy : 0;
+        
+        // Calcular promedio diario de la semana
+        let promedioSemanal = 0;
+        if (typeof mantenimiento !== 'undefined') {
+            const ciclosSemana = mantenimiento.obtenerCiclosPorDia(7);
+            const totalSemana = ciclosSemana.reduce((sum, d) => sum + d[1], 0);
+            promedioSemanal = Math.round(totalSemana / 7);
+        }
+        
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 51, 102);
+        doc.text('RESUMEN EJECUTIVO', x, y);
+        y += 8;
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(60, 60, 60);
+        
+        const resumen = `Durante el dia de hoy, el porton ha registrado ${hoy} ciclos de apertura/cierre. 
+Acumula un total de ${total} ciclos desde su puesta en marcha. 
+El promedio diario de la ultima semana es de ${promedioSemanal} ciclos por dia.`;
+        
+        // Dividir texto en líneas
+        const lineas = doc.splitTextToSize(resumen, 170);
+        doc.text(lineas, x + 5, y);
+        y += (lineas.length * 6) + 10;
+        
+        return y;
+    }
+
+    // NUEVO: Comparativa con semana anterior
+    async agregarComparativaSemanal(doc, y) {
+        const x = this.margen.izquierdo;
+        
+        let semanaActual = 0;
+        let semanaAnterior = 0;
+        
+        if (typeof mantenimiento !== 'undefined') {
+            const ciclos = mantenimiento.obtenerCiclosPorDia(14);
+            // Semana actual (últimos 7 días)
+            for (let i = 0; i < 7 && i < ciclos.length; i++) {
+                semanaActual += ciclos[i][1];
+            }
+            // Semana anterior (días 7-14)
+            for (let i = 7; i < 14 && i < ciclos.length; i++) {
+                semanaAnterior += ciclos[i][1];
+            }
+        }
+        
+        const variacion = semanaAnterior > 0 ? ((semanaActual - semanaAnterior) / semanaAnterior * 100).toFixed(1) : 0;
+        const tendencia = variacion >= 0 ? '+' : '';
+        const color = variacion >= 0 ? [16, 185, 129] : [220, 38, 38];
+        
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 51, 102);
+        doc.text('COMPARATIVA SEMANAL', x, y);
+        y += 8;
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(60, 60, 60);
+        doc.text(`Semana actual: ${semanaActual} ciclos`, x + 5, y);
+        doc.text(`Semana anterior: ${semanaAnterior} ciclos`, x + 5, y + 7);
+        
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(color[0], color[1], color[2]);
+        doc.text(`Variacion: ${tendencia}${variacion}%`, x + 5, y + 14);
+        
+        return y + 28;
+    }
+
+    // NUEVO: Gráfico de salud (doughnut)
+    async agregarGraficoSalud(doc, y) {
+        const x = this.margen.izquierdo;
+        const salud = parseInt(document.getElementById('healthPercent')?.textContent || '100');
+        
+        // Crear canvas temporal para el gráfico de salud
+        const canvas = document.createElement('canvas');
+        canvas.width = 200;
+        canvas.height = 200;
+        const ctx = canvas.getContext('2d');
+        
+        // Dibujar gráfico circular
+        const angulo = (salud / 100) * 2 * Math.PI;
+        const centroX = 100, centroY = 100, radio = 70;
+        
+        // Fondo gris
+        ctx.beginPath();
+        ctx.arc(centroX, centroY, radio, 0, 2 * Math.PI);
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fill();
+        
+        // Sector de salud (color según valor)
+        ctx.beginPath();
+        ctx.arc(centroX, centroY, radio, -Math.PI / 2, -Math.PI / 2 + angulo);
+        ctx.lineTo(centroX, centroY);
+        ctx.fillStyle = salud > 70 ? '#10b981' : (salud > 40 ? '#f59e0b' : '#ef4444');
+        ctx.fill();
+        
+        // Texto central
+        ctx.font = 'bold 24px Arial';
+        ctx.fillStyle = '#1e293b';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${salud}%`, centroX, centroY);
+        
+        ctx.font = '12px Arial';
+        ctx.fillStyle = '#64748b';
+        ctx.fillText('Salud del Sistema', centroX, centroY + 30);
+        
+        const dataUrl = canvas.toDataURL('image/png');
+        
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 51, 102);
+        doc.text('ESTADO DE SALUD', x, y);
+        y += 5;
+        
+        doc.addImage(dataUrl, 'PNG', x + 30, y, 40, 40);
+        
+        return y + 50;
+    }
+
+    // NUEVO: Predicción con fecha estimada
+    async agregarPrediccionConFecha(doc, y) {
+        const x = this.margen.izquierdo;
+        const total = typeof globalTotalAcumulado !== 'undefined' ? globalTotalAcumulado : 0;
+        
+        let ciclosPorDia = 10; // valor por defecto
+        if (typeof mantenimiento !== 'undefined') {
+            const ciclosSemana = mantenimiento.obtenerCiclosPorDia(7);
+            const totalSemana = ciclosSemana.reduce((sum, d) => sum + d[1], 0);
+            ciclosPorDia = Math.max(1, Math.round(totalSemana / 7));
+        }
+        
+        const proximoMantenimiento = 500;
+        const ciclosRestantes = proximoMantenimiento - (total % proximoMantenimiento);
+        const diasEstimados = Math.ceil(ciclosRestantes / ciclosPorDia);
+        
+        const fechaEstimada = new Date();
+        fechaEstimada.setDate(fechaEstimada.getDate() + diasEstimados);
+        const fechaStr = fechaEstimada.toLocaleDateString('es-ES', {
+            year: 'numeric', month: 'long', day: 'numeric'
+        });
+        
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0, 51, 102);
+        doc.text('PREDICCION DE MANTENIMIENTO', x, y);
+        y += 8;
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(60, 60, 60);
+        doc.text(`Proximo mantenimiento preventivo en: ${ciclosRestantes} ciclos`, x + 5, y);
+        doc.text(`Fecha estimada: ${fechaStr}`, x + 5, y + 7);
+        doc.text(`(Basado en promedio de ${ciclosPorDia} ciclos/dia)`, x + 5, y + 14);
+        
+        let mensaje = '';
+        let color = [16, 185, 129];
+        if (total > 4000) {
+            mensaje = 'ALERTA: Reemplazo de motor requerido pronto';
+            color = [220, 38, 38];
+        } else if (total > 3000) {
+            mensaje = 'ATENCION: Desgaste significativo';
+            color = [245, 158, 11];
+        } else if (total > 2000) {
+            mensaje = 'Mantenimiento regular recomendado';
+            color = [59, 130, 246];
+        } else if (total > 1000) {
+            mensaje = 'Sistema funcionando correctamente';
+            color = [16, 185, 129];
+        } else {
+            mensaje = 'Sistema en excelente estado';
+            color = [16, 185, 129];
+        }
+        
+        y += 25;
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(color[0], color[1], color[2]);
+        doc.text(mensaje, x + 5, y);
+        
+        return y + 20;
+    }
+
     async generarReportePDF(tipo = 'completo') {
         try {
             this.mostrarMensaje('Generando PDF...', '#3b82f6');
@@ -194,21 +408,34 @@ class GeneradorPDF {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
             
-            // Capturar gráficos
-            const graficoDiario = await this.capturarGrafico('dailyChart');
-            const graficoHorario = await this.capturarGrafico('hourlyChart');
+            // Capturar gráficos con mejor calidad
+            const graficoDiario = await this.capturarGrafico('dailyChart', 2);
+            const graficoHorario = await this.capturarGrafico('hourlyChart', 2);
+            const graficoTendencia = await this.capturarGrafico('trendChart', 2);
             
-            // Página 1
+            // ========== PÁGINA 1 ==========
             let y = await this.agregarEncabezadoConLogos(doc);
-            y = await this.agregarResumen(doc, y);
-            y = await this.agregarGrafico(doc, y, graficoDiario, 'Ciclos por dia (Ultimos 7 dias)');
+            await this.agregarMarcaDeAgua(doc);
+            y = await this.agregarResumenEjecutivo(doc, y);
+            y = await this.agregarComparativaSemanal(doc, y);
+            y = await this.agregarGraficoSalud(doc, y);
+            y = await this.agregarPrediccionConFecha(doc, y);
             
-            // Página 2
+            // ========== PÁGINA 2 ==========
             doc.addPage();
             y = await this.agregarEncabezadoConLogos(doc);
+            await this.agregarMarcaDeAgua(doc);
+            y = await this.agregarGrafico(doc, y, graficoDiario, 'Ciclos por dia (Ultimos 7 dias)');
             y = await this.agregarGrafico(doc, y, graficoHorario, 'Horario de actividad');
+            
+            // ========== PÁGINA 3 ==========
+            doc.addPage();
+            y = await this.agregarEncabezadoConLogos(doc);
+            await this.agregarMarcaDeAgua(doc);
+            if (graficoTendencia) {
+                y = await this.agregarGrafico(doc, y, graficoTendencia, 'Tendencia de uso (Ultimos 30 dias)');
+            }
             y = await this.agregarTablaMantenimiento(doc, y);
-            y = await this.agregarPrediccion(doc, y);
             
             this.agregarPiePagina(doc);
             
@@ -220,34 +447,6 @@ class GeneradorPDF {
             console.error('Error:', error);
             this.mostrarMensaje('Error: ' + error.message, '#ef4444');
         }
-    }
-
-    async agregarResumen(doc, y) {
-        const x = this.margen.izquierdo;
-        
-        doc.setFontSize(14);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(0, 51, 102);
-        doc.text('RESUMEN GENERAL', x, y);
-        y += 10;
-        
-        const total = typeof globalTotalAcumulado !== 'undefined' ? globalTotalAcumulado : 
-                     (typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0);
-        const hoy = typeof globalCiclosHoy !== 'undefined' ? globalCiclosHoy : 
-                    (typeof mantenimiento !== 'undefined' ? mantenimiento.obtenerCiclosHoy() : 0);
-        const estado = document.getElementById('currentState')?.textContent || '---';
-        const salud = document.getElementById('healthPercent')?.textContent || '100';
-        
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(0, 0, 0);
-        
-        doc.text(`Ciclos Totales: ${total}`, x + 5, y);
-        doc.text(`Ciclos Hoy: ${hoy}`, x + 5, y + 10);
-        doc.text(`Estado Actual: ${estado}`, x + 5, y + 20);
-        doc.text(`Salud del Sistema: ${salud}%`, x + 5, y + 30);
-        
-        return y + 50;
     }
 
     async agregarGrafico(doc, y, grafico, titulo) {
@@ -339,40 +538,6 @@ class GeneradorPDF {
             
             y += 7;
         }
-        
-        return y + 15;
-    }
-
-    async agregarPrediccion(doc, y) {
-        const x = this.margen.izquierdo;
-        
-        const total = typeof globalTotalAcumulado !== 'undefined' ? globalTotalAcumulado : 
-                     (typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0);
-        
-        let mensaje = '';
-        let color = [16, 185, 129];
-        
-        if (total > 4000) {
-            mensaje = 'ALERTA: Se recomienda reemplazo preventivo del motor';
-            color = [220, 38, 38];
-        } else if (total > 3000) {
-            mensaje = 'ATENCION: Desgaste significativo detectado';
-            color = [245, 158, 11];
-        } else if (total > 2000) {
-            mensaje = 'Mantenimiento regular requerido';
-            color = [59, 130, 246];
-        } else if (total > 1000) {
-            mensaje = 'Sistema funcionando dentro de parametros normales';
-            color = [16, 185, 129];
-        } else {
-            mensaje = 'Sistema en excelente estado';
-            color = [16, 185, 129];
-        }
-        
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(color[0], color[1], color[2]);
-        doc.text(mensaje, x + 5, y);
         
         return y + 15;
     }
