@@ -1,7 +1,7 @@
 // ============================================================
 // SMARTGATE - GENERADOR DE PDF (VERSIÓN FINAL CORREGIDA)
 // Con: marca de agua con logo + texto "Informatica Industrial"
-// Espacios optimizados y texto completo
+// Logo de carrera al DOBLE de tamaño
 // ============================================================
 
 class GeneradorPDF {
@@ -94,10 +94,14 @@ class GeneradorPDF {
         });
     }
 
+    // ============================================================
+    // MARCA DE AGUA CON LOGO DE CARRERA (DOBLE TAMAÑO)
+    // ============================================================
     async agregarMarcaDeAgua(doc) {
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();
         
+        // Cargar logo de carrera para marca de agua
         let logoData = null;
         try {
             if (this.logosCache.carrera) {
@@ -111,10 +115,11 @@ class GeneradorPDF {
         
         if (logoData) {
             try {
-                const logoWidth = 55;
-                const logoHeight = 55;
+                // ✅ LOGO MÁS GRANDE - Antes 55mm, ahora 110mm (el doble)
+                const logoWidth = 110;
+                const logoHeight = 110;
                 const x = (pageWidth - logoWidth) / 2;
-                const y = (pageHeight - logoHeight) / 2 - 20;
+                const y = (pageHeight - logoHeight) / 2 - 40;
                 
                 doc.saveGraphicsState();
                 doc.setGState(new doc.GState({ opacity: 0.12 }));
@@ -123,12 +128,13 @@ class GeneradorPDF {
             } catch(e) {}
         }
         
+        // Texto "Informatica Industrial" debajo del logo
         doc.saveGraphicsState();
         doc.setGState(new doc.GState({ opacity: 0.12 }));
-        doc.setFontSize(20);
+        doc.setFontSize(24);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(100, 100, 100);
-        doc.text('INFORMATICA INDUSTRIAL', pageWidth / 2, (pageHeight / 2) + 50, { align: 'center' });
+        doc.text('INFORMATICA INDUSTRIAL', pageWidth / 2, (pageHeight / 2) + 85, { align: 'center' });
         doc.restoreGraphicsState();
     }
 
@@ -461,7 +467,6 @@ class GeneradorPDF {
         return y;
     }
 
-    // ✅ FUNCIÓN CORREGIDA - Convertir números a string
     async agregarTablaMantenimiento(doc, y) {
         const x = this.margen.izquierdo;
         
@@ -474,7 +479,6 @@ class GeneradorPDF {
         const total = typeof globalTotalAcumulado !== 'undefined' ? globalTotalAcumulado : 
                      (typeof mantenimiento !== 'undefined' ? mantenimiento.ciclos.total : 0);
         
-        // ✅ Convertir getRestantes a String para evitar error de tipo
         const filas = [
             ['Revision Preventiva', '500', this.getEstado(total, 500), String(this.getRestantes(total, 500))],
             ['Lubricacion', '1000', this.getEstado(total, 1000), String(this.getRestantes(total, 1000))],
@@ -521,7 +525,6 @@ class GeneradorPDF {
             xPos += colWidth[1];
             doc.text(filas[i][2], xPos + 2, y + 4.5);
             xPos += colWidth[2];
-            // ✅ Asegurar que sea string
             doc.text(String(filas[i][3]), xPos + 2, y + 4.5);
             
             y += 6;
@@ -538,8 +541,8 @@ class GeneradorPDF {
     }
 
     getRestantes(total, limite) {
-        if (total >= limite) return '0';  // ✅ Retorna string
-        return String(limite - total);     // ✅ Retorna string
+        if (total >= limite) return '0';
+        return String(limite - total);
     }
 
     agregarPiePagina(doc) {
